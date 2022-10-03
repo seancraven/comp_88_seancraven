@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
 """
 COMP0088 lab exercises for week 1.
 
@@ -26,6 +25,8 @@ import argparse
 
 import numpy as np
 import numpy.random
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 import utils
@@ -59,9 +60,14 @@ def generate_noisy_linear(num_samples, weights, sigma, limits, rng):
               num_samples x (len(weights) - 1)
         y: a vector of num_samples output values
     """
-    
-    # TODO: implement this
-    return None, None
+    # Rather than having the reduced dimentions as suggested in the question,
+    # Have the same number of features as weights so an elementwise product
+    # gives the required solution
+    x = np.random.uniform(limits[0], limits[1], size=(num_samples, len(weights)))
+    x[:, 0] = 1
+    y = np.sum(x * weights, axis=1)
+
+    return x[:, 1:], y
 
 
 def plot_noisy_linear_1d(axes, num_samples, weights, sigma, limits, rng):
@@ -87,9 +93,13 @@ def plot_noisy_linear_1d(axes, num_samples, weights, sigma, limits, rng):
     """
     assert(len(weights)==2)
     X, y = generate_noisy_linear(num_samples, weights, sigma, limits, rng)
-    
-    # TODO: do the plotting
-    utils.plot_unimplemented ( axes, 'Noisy 1D Linear Model' )
+    plt.plot(X, y)
+
+
+
+
+
+
 
 
 def plot_noisy_linear_2d(axes, resolution, weights, sigma, limits, rng):

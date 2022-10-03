@@ -60,12 +60,13 @@ def generate_noisy_linear(num_samples, weights, sigma, limits, rng):
               num_samples x (len(weights) - 1)
         y: a vector of num_samples output values
     """
-    # Rather than having the reduced dimentions as suggested in the question,
+    # Rather than having the reduced dimensions as suggested in the question,
     # Have the same number of features as weights so an elementwise product
     # gives the required solution
+    epsilon = np.random.normal(loc=0, scale=sigma, size=num_samples)
     x = np.random.uniform(limits[0], limits[1], size=(num_samples, len(weights)))
     x[:, 0] = 1
-    y = np.sum(x * weights, axis=1)
+    y = np.sum(x * weights, axis=1) + epsilon
 
     return x[:, 1:], y
 
@@ -93,9 +94,7 @@ def plot_noisy_linear_1d(axes, num_samples, weights, sigma, limits, rng):
     """
     assert(len(weights)==2)
     X, y = generate_noisy_linear(num_samples, weights, sigma, limits, rng)
-    plt.plot(X, y)
-
-
+    axes.scatter(X, y, marker = "x")
 
 
 
@@ -121,10 +120,12 @@ def plot_noisy_linear_2d(axes, resolution, weights, sigma, limits, rng):
         None
     """
     assert(len(weights)==3)
-    
-    # TODO: generate the data
-    # TODO: do the plotting
-    utils.plot_unimplemented ( axes, 'Noisy 2D Linear Model' )
+    samples = 5000
+    X, y = generate_noisy_linear(samples, weights, sigma, limits, rng)
+    plot = axes.scatter(X[:,0], X[:,1], c = y, cmap="viridis")
+
+
+
 
 
 # -- Question 2 --
@@ -135,7 +136,9 @@ def generate_linearly_separable(num_samples, weights, limits, rng):
     decision boundary.
 
     # Arguments
-        num_samples: number of samples to generate
+        num_samples: number of hts)==2)
+    X, y = generate_noisy_linear(num_samples, weights, sigma, limits, rng)
+    numsamples to generate
             (ie, the number of rows in the returned X
             and the length of the returned y)
         weights: vector defining the decision boundary
@@ -153,8 +156,10 @@ def generate_linearly_separable(num_samples, weights, limits, rng):
               num_samples x (len(weights) - 1)
         y: a vector of num_samples binary labels
     """
-    # TODO: implement this
-    return None, None
+    x, y = generate_noisy_linear(num_samples,weights, 1,limits, rng)
+    classification_array = (y >= 0)*1
+
+    return x, classification_array
 
 
 
@@ -179,18 +184,25 @@ def plot_linearly_separable_2d(axes, num_samples, weights, limits, rng):
     """
     assert(len(weights)==3)
     X, y = generate_linearly_separable(num_samples, weights, limits, rng)
-    
-    # TODO: do the plotting
-    utils.plot_unimplemented ( axes, 'Linearly Separable Binary Data' )
-
-
+    y_bool = y.astype(bool)
+    axes.scatter(X[y_bool,0], X[y_bool,1], marker="x", color="black")
+    axes.scatter(X[~y_bool,0], X[~y_bool,1] ,marker="o", color="red")
+    # Plotting the intersection of the division plane denoted by weights
+    x_0_lim = limits
+    x_0 = np.linspace(*limits, num=20)
+    x_1_on_line = (-x_0*weights[1] - weights[0])/weights[2]
+    axes.plot(x_0, x_1_on_line, linestyle="--", color="grey")
+    axes.set_ylim(*limits)
+    axes.set_xlim(*limits)
+    arrow_grad = weights[2]/weights[1]
+    axes.arrow(0,-weights[0]/weights[2],-1, -1*arrow_grad, color="grey", head_width=1)
 # -- Question 3 --
 
 def random_search(function, count, num_samples, limits, rng):
     """
     Randomly sample from a function of `count` features and return
     the best feature vector found.
-    
+
     # Arguments
         function: a function taking a single input array of
             shape (..., count), where the last dimension
@@ -201,14 +213,17 @@ def random_search(function, count, num_samples, limits, rng):
             range of all the input features x_i
         rng: an instance of numpy.random.Generator
             from which to draw random numbers
-    
+
     # Returns
         x: a vector of length count, containing the found features
     """
-    
-    # TODO: implement this
-    return None
 
+    random_feature_grid = utils.make_random(num_samples,limits=limits, rng=rng,count=count)
+    output = np.zeros((num_samples, num_samples))
+    for i in range(num_samples):
+        for j in range(num_samples):
+            output[i,j] = function(random_feature_grid[i,j,:])
+    return random_feature_grid.flatten()[np.argmin(output)]
 
 def grid_search(function, count, num_divisions, limits):
     """
@@ -228,10 +243,13 @@ def grid_search(function, count, num_divisions, limits):
     # Returns
         x: a vector of length count, containing the found features
     """
-    
-    # TODO: implement this
-    return None
 
+    grid = utils.make_grid(limits=limits, num_divisions=num_divisions,count=count)
+    output =  np.zeros((num_divisions, num_divisions))
+    for i in range(num_divisions):
+        for j in range(num_divisions):
+            output[i,j] = function(grid[i,j,:])
+    return grid.flatten()[np.argmin(output)]
 
 def plot_searches_2d(axes, function, limits, resolution,
                      num_divisions, num_samples, rng, true_min=None):
@@ -262,9 +280,12 @@ def plot_searches_2d(axes, function, limits, resolution,
     # Returns
         None
     """
-    
-    # TODO: implement this
-    utils.plot_unimplemented ( axes, 'Sampling Search' )
+    grid_search_val = grid_search(function, 2, num_divisions,limits)
+    random_search_val = random_search(function, 2, num_samples, limits, rng)
+    axes.scatter(*true_min, c="red", label="True Min")
+    axes.scatter(*grid_search_val, c="blue", label="Grid Search")
+    axes.scatter(*random_search_val, c="green", label="Random Search")
+
 
 
 

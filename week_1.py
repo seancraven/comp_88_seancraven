@@ -288,8 +288,10 @@ def plot_searches_2d(axes, function, limits, resolution,
     axes.scatter(*random_search_val, c="green", label="Random Search")
     axes.legend()
 
-def plots
+def plots_3d(axes, num_samples, weights, sigma, limits, rng):
+    X, y = generate_noisy_linear(num_samples, weights, sigma, limits, rng)
 
+    axes.scatter(X[:, 0], X[:, 1], y, c="black")
 #### TEST DRIVER
 
 def process_args():
@@ -330,9 +332,17 @@ if __name__ == '__main__':
     print('plotting searches')
     plot_searches_2d(axs[1, 1], test_func, limits=LIMITS, resolution=100, num_divisions=10, num_samples=100, rng=rng, true_min=(1,0))
 
-    print("\nQ4: 3D Plotting")
 
 
     fig.tight_layout(pad=1)
     fig.savefig(args.file)
     plt.close(fig)
+
+    print("\nQ4: 3D Plotting")
+    fig_2 = plt.figure()
+    ax = fig_2.add_subplot(111, projection="3d")
+    ax.view_init(30,20)
+    plots_3d(ax, 1000, WEIGHTS, 1, LIMITS, rng)
+    fig_2.tight_layout(pad=1)
+    fig_2.savefig("week_1_3D.pdf")
+    plt.close(fig_2)

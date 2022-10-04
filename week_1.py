@@ -122,7 +122,7 @@ def plot_noisy_linear_2d(axes, resolution, weights, sigma, limits, rng):
     assert(len(weights)==3)
     samples = 5000
     X, y = generate_noisy_linear(samples, weights, sigma, limits, rng)
-    plot = axes.scatter(X[:,0], X[:,1], c = y, cmap="viridis")
+    axes.scatter(X[:,0], X[:,1], c = y, cmap="viridis")
 
 
 
@@ -219,11 +219,10 @@ def random_search(function, count, num_samples, limits, rng):
     """
 
     random_feature_grid = utils.make_random(num_samples,limits=limits, rng=rng,count=count)
-    output = np.zeros((num_samples, num_samples))
+    output = np.zeros(num_samples)
     for i in range(num_samples):
-        for j in range(num_samples):
-            output[i,j] = function(random_feature_grid[i,j,:])
-    return random_feature_grid.flatten()[np.argmin(output)]
+        output[i] = function(random_feature_grid[i, :])
+    return random_feature_grid[np.argmin(output), :]
 
 def grid_search(function, count, num_divisions, limits):
     """
@@ -245,11 +244,10 @@ def grid_search(function, count, num_divisions, limits):
     """
 
     grid = utils.make_grid(limits=limits, num_divisions=num_divisions,count=count)
-    output =  np.zeros((num_divisions, num_divisions))
-    for i in range(num_divisions):
-        for j in range(num_divisions):
-            output[i,j] = function(grid[i,j,:])
-    return grid.flatten()[np.argmin(output)]
+    output = function(grid)
+    first_index = np.argmin(output) // num_divisions
+    second_index = np.argmin(output) % num_divisions
+    return grid[first_index, second_index, :]
 
 def plot_searches_2d(axes, function, limits, resolution,
                      num_divisions, num_samples, rng, true_min=None):
@@ -280,14 +278,17 @@ def plot_searches_2d(axes, function, limits, resolution,
     # Returns
         None
     """
+    grid = utils.make_grid(limits, num_divisions, count=2)
+    f_grid = function(grid)
     grid_search_val = grid_search(function, 2, num_divisions,limits)
     random_search_val = random_search(function, 2, num_samples, limits, rng)
+    axes.contourf(grid[...,0], grid[...,1], f_grid, cmap="viridis")
     axes.scatter(*true_min, c="red", label="True Min")
     axes.scatter(*grid_search_val, c="blue", label="Grid Search")
     axes.scatter(*random_search_val, c="green", label="Random Search")
+    axes.legend()
 
-
-
+def plots
 
 #### TEST DRIVER
 
@@ -328,6 +329,9 @@ if __name__ == '__main__':
     print('\nQ3: searching for a minimiser')
     print('plotting searches')
     plot_searches_2d(axs[1, 1], test_func, limits=LIMITS, resolution=100, num_divisions=10, num_samples=100, rng=rng, true_min=(1,0))
+
+    print("\nQ4: 3D Plotting")
+
 
     fig.tight_layout(pad=1)
     fig.savefig(args.file)

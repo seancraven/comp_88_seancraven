@@ -64,10 +64,9 @@ def generate_noisy_linear(num_samples, weights, sigma, limits, rng):
     # Have the same number of features as weights so an elementwise product
     # gives the required solution
     epsilon = np.random.normal(loc=0, scale=sigma, size=num_samples)
-    x = np.random.uniform(limits[0], limits[1], size=(num_samples, len(weights)))
+    x = np.random.uniform(*limits, size=(num_samples, len(weights)))
     x[:, 0] = 1
     y = np.sum(x * weights, axis=1) + epsilon
-
     return x[:, 1:], y
 
 
@@ -156,10 +155,12 @@ def generate_linearly_separable(num_samples, weights, limits, rng):
               num_samples x (len(weights) - 1)
         y: a vector of num_samples binary labels
     """
-    x, y = generate_noisy_linear(num_samples,weights, 1,limits, rng)
-    classification_array = (y >= 0)*1
-
-    return x, classification_array
+    X = np.random.uniform(*limits, (num_samples, len(weights)))
+    X[:,0] = 1
+    f_X = np.sum(X*weights)
+    y = np.zeros(num_samples)
+    y[ >= ] = 1
+    return X, y
 
 
 
@@ -185,16 +186,15 @@ def plot_linearly_separable_2d(axes, num_samples, weights, limits, rng):
     assert(len(weights)==3)
     X, y = generate_linearly_separable(num_samples, weights, limits, rng)
     y_bool = y.astype(bool)
-    axes.scatter(X[y_bool,0], X[y_bool,1], marker="x", color="black")
-    axes.scatter(X[~y_bool,0], X[~y_bool,1] ,marker="o", color="red")
+    axes.scatter(X[y_bool, 0], X[y_bool, 1], marker="x", color="black")
+    axes.scatter(X[~y_bool, 0], X[~y_bool, 1] ,marker="o", color="red")
     # Plotting the intersection of the division plane denoted by weights
-    x_0_lim = limits
     x_0 = np.linspace(*limits, num=20)
-    x_1_on_line = (-x_0*weights[1] - weights[0])/weights[2]
+    x_1_on_line = (x_0*weights[1] + weights[0])/weights[2]
     axes.plot(x_0, x_1_on_line, linestyle="--", color="grey")
     axes.set_ylim(*limits)
     axes.set_xlim(*limits)
-    arrow_grad = weights[2]/weights[1]
+    arrow_grad = weights[0]/weights[1]
     axes.arrow(0,-weights[0]/weights[2],-1, -1*arrow_grad, color="grey", head_width=1)
 # -- Question 3 --
 

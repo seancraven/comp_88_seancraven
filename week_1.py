@@ -157,10 +157,10 @@ def generate_linearly_separable(num_samples, weights, limits, rng):
     """
     X = np.random.uniform(*limits, (num_samples, len(weights)))
     X[:,0] = 1
-    f_X = np.sum(X*weights)
+    f_X = np.sum(X*weights, axis=1)
     y = np.zeros(num_samples)
-    y[ >= ] = 1
-    return X, y
+    y[f_X >= 0] = 1
+    return X[:, 1:], y
 
 
 
@@ -190,11 +190,11 @@ def plot_linearly_separable_2d(axes, num_samples, weights, limits, rng):
     axes.scatter(X[~y_bool, 0], X[~y_bool, 1] ,marker="o", color="red")
     # Plotting the intersection of the division plane denoted by weights
     x_0 = np.linspace(*limits, num=20)
-    x_1_on_line = (x_0*weights[1] + weights[0])/weights[2]
+    x_1_on_line = (x_0*weights[1] + weights[0])/-weights[2]
     axes.plot(x_0, x_1_on_line, linestyle="--", color="grey")
     axes.set_ylim(*limits)
     axes.set_xlim(*limits)
-    arrow_grad = weights[0]/weights[1]
+    arrow_grad = weights[2]/weights[1]
     axes.arrow(0,-weights[0]/weights[2],-1, -1*arrow_grad, color="grey", head_width=1)
 # -- Question 3 --
 

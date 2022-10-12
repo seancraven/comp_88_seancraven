@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 import utils
 
 from week_1 import generate_noisy_linear, generate_linearly_separable
-
+import time
 
 #### ADD YOUR CODE BELOW
 
@@ -90,7 +90,7 @@ def monomial_projection_1d(X, degree):
     assert X.shape[1] == 1
     Xm = np.ones((X.shape[0], degree + 1))
     for i in range(1, degree + 1):
-        Xm[:, i: i + 1] = X ** i
+        Xm[:, i : i + 1] = X**i
     return Xm
 
 
@@ -155,8 +155,8 @@ def fit_poly_1d(X, y, degree, l2=0):
 # -- Question 3 --
 
 
-def gradient_descent(z, loss_func, grad_func, lr=0.01, loss_stop=1e-4,
-        z_stop=1e-4, max_iter=100
+def gradient_descent(
+    z, loss_func, grad_func, lr=0.001, loss_stop=1e-4, z_stop=1e-4, max_iter=100
 ):
     """
     Generic batch gradient descent optimisation.
@@ -189,9 +189,11 @@ def gradient_descent(z, loss_func, grad_func, lr=0.01, loss_stop=1e-4,
     zs = [z]
     losses = [loss_func(z)]
     i = 0
-    while (i < max_iter and abs_loss_bound(zs, z_stop) and loss_func(
-        zs[-1]
-        ) > loss_stop):
+    while (
+        i < max_iter
+        and abs_loss_bound(zs, z_stop)
+        and np.min(loss_func(zs[-1])) > loss_stop
+    ):
         z_next = zs[-1] - lr * grad_func(zs[-1])
         losses.append(loss_func(z_next))
         zs.append(z_next)
@@ -214,14 +216,18 @@ def abs_loss_bound(z: list, bound: float):
     if len(z) < 2:
         return True
     else:
-        return np.dot((z[-1] - z[-2]), (z[-1] - z[-2])) ** 0.5 > bound
+        return np.min(np.dot((z[-1] - z[-2]), safe_transpose(z[-1] - z[-2]))** 0.5) > bound
 
-
+def safe_transpose(tensor):
+    if isinstance(tensor, float):
+        return tensor
+    else:
+        return tensor.T
 # -- Question 4 --
 
 
-def logistic_regression(X, y, w0=None, lr=0.05, loss_stop=1e-4,
-        weight_stop=1e-4, max_iter=100
+def logistic_regression(
+    X, y, w0=None, lr=0.05, loss_stop=1e-4, weight_stop=1e-4, max_iter=100
 ):
     """
     Fit a logistic regression classifier to data.
@@ -246,7 +252,7 @@ def logistic_regression(X, y, w0=None, lr=0.05, loss_stop=1e-4,
     # Returns
         ws: a list of fitted weights at each iteration
         losses: a list of the loss values at each iteration
-    # """
+    #"""
 
     def binary_cross_entropy(z, slice=None):
         y_hat = sigmoid(np.matmul(X, z))
@@ -254,10 +260,7 @@ def logistic_regression(X, y, w0=None, lr=0.05, loss_stop=1e-4,
         assert y.shape == y_hat.shape
         assert len(y.shape) == 1
         n = len(y)
-        return -1 / n * (np.dot(y, np.log(y_hat)) + np.dot(1 - y, np.log(
-            1 - y_hat
-            )
-                                                           ))
+        return -1 / n * (np.dot(y, np.log(y_hat)) + np.dot(1 - y, np.log(1 - y_hat)))
 
     def grad_binary_cross(z):
         y_hat = sigmoid(np.matmul(X, z))
@@ -270,9 +273,15 @@ def logistic_regression(X, y, w0=None, lr=0.05, loss_stop=1e-4,
         X = np.concatenate((np.ones((len(y), 1)), X), axis=1)
     if not w0:
         w0 = np.zeros(X.shape[1])
-    return gradient_descent(w0, binary_cross_entropy, grad_binary_cross,
-                            lr, loss_stop, weight_stop, max_iter
-                            )
+    return gradient_descent(
+        w0,
+        binary_cross_entropy,
+        grad_binary_cross,
+        lr,
+        loss_stop,
+        weight_stop,
+        max_iter,
+    )
 
 
 def sigmoid(z):
@@ -302,7 +311,7 @@ def lasso_regression(X, y, l1=0):
         Returns:
             L: Loss value for these set of weights
         """
-        reg_term = l1*np.sum(z**2)**0.5
+        reg_term = l1 * np.dot(z, z) ** 0.5
         data_term = np.dot(X, z) - y
         L = np.dot(data_term, data_term) + reg_term
         return L
@@ -318,14 +327,20 @@ def lasso_regression(X, y, l1=0):
         Returns:
 
         """
-        if np.dot(z, z) == 0:
-            return 0
-        else:
-            return 2*(np.einsum("ik,ij,j->k", X, X, z)-np.dot(X.T, y)) +l1*z/abs(z)
-    ww, ll = gradient_descent(np.zeros(X.shape[1]), laso_loss, laso_loss_grad)
-    print(ww)
+
+        return 2 * (np.dot(X.T, (np.dot(X, z) - y))) + l1 * grad_abs(z)
+
+    ww, ll = gradient_descent(np.random.random(X.shape[1]), laso_loss, laso_loss_grad)
+    print(l1, ww)
     return ww[-1]
 
+
+def grad_abs(z):
+    grad = np.zeros_like(z)
+    for i, z_i in enumerate(z):
+        if z_i != 0:
+            grad[i] = z_i / abs(z_i)
+    return grad
 
 
 #### plotting utilities
@@ -362,9 +377,7 @@ def plot_ridge_regression_1d(axes, X, y, weights, limits, l2s=[0]):
     y0 = weights[0] + limits[0] * weights[1]
     y1 = weights[0] + limits[1] * weights[1]
 
-    axes.plot(limits, (y0, y1), linestyle="dashed", color="red",
-              label="Ground Truth"
-              )
+    axes.plot(limits, (y0, y1), linestyle="dashed", color="red", label="Ground Truth")
 
     # fit for specified regs and plot the results
     X1 = utils.add_x0(X)
@@ -373,17 +386,27 @@ def plot_ridge_regression_1d(axes, X, y, weights, limits, l2s=[0]):
     for l2 in l2s:
         ### To implement the lasoo on the same graph add here.
         w = ridge_closed(X1, y, l2)
-        w_laso = lasso_regression(X1,y , l2)
+        w_laso = lasso_regression(X1, y, l2)
         y0 = w[0] + limits[0] * w[1]
         y1 = w[0] + limits[1] * w[1]
 
         y0_laso = w_laso[0] + limits[0] * w_laso[1]
         y1_laso = w_laso[0] + limits[1] * w_laso[1]
 
-        axes.plot(limits, (y0, y1), linestyle="solid",
-            color=cmap(l2 / np.max(l2s)), label="$\lambda=%.f$" % l2, )
-        axes.plot(limits, (y0_laso, y1_laso), linestyle=":",
-            color=cmap(l2 / np.max(l2s)), label="$\lambda=%.f$" % l2, )
+        axes.plot(
+            limits,
+            (y0, y1),
+            linestyle="solid",
+            color=cmap(l2 / np.max(l2s)),
+            label="$\lambda_{L2}=%.f$" % l2,
+        )
+        axes.plot(
+            limits,
+            (y0_laso, y1_laso),
+            linestyle=":",
+            color=cmap(l2 / np.max(l2s)),
+            label="$\lambda_{L1}=%.f$" % l2,
+        )
 
     axes.set_xlim(limits[0], limits[1])
     axes.set_ylim(limits[0], limits[1])
@@ -425,13 +448,13 @@ def plot_poly_fit_1d(axes, X, y, weights, limits, degrees, l2=0):
 
     print(f"true weights: {weights}")
     ground_x, ground_y = utils.grid_sample(
-        lambda x: utils.affine(monomial_projection_1d(x, len(weights) - 1),
-                               weights
-                               ), 1, num_divisions=50, limits=limits, )
+        lambda x: utils.affine(monomial_projection_1d(x, len(weights) - 1), weights),
+        1,
+        num_divisions=50,
+        limits=limits,
+    )
 
-    axes.plot(ground_x, ground_y, color="red", linestyle="dashed",
-              label="Ground Truth"
-              )
+    axes.plot(ground_x, ground_y, color="red", linestyle="dashed", label="Ground Truth")
 
     cmap = plt.cm.get_cmap("jet")
     n = 0
@@ -444,11 +467,18 @@ def plot_poly_fit_1d(axes, X, y, weights, limits, degrees, l2=0):
 
         print(f"fit {deg} weights: {w}")
         fit_x, fit_y = utils.grid_sample(
-            lambda x: utils.affine(monomial_projection_1d(x, len(w) - 1),
-                                   w
-                                   ), 1, num_divisions=50, limits=limits, )
-        axes.plot(fit_x, fit_y, linestyle="solid",
-            color=cmap(n / len(degrees)), label=f"Degree {deg} Fit", )
+            lambda x: utils.affine(monomial_projection_1d(x, len(w) - 1), w),
+            1,
+            num_divisions=50,
+            limits=limits,
+        )
+        axes.plot(
+            fit_x,
+            fit_y,
+            linestyle="solid",
+            color=cmap(n / len(degrees)),
+            label=f"Degree {deg} Fit",
+        )
         n += 1
 
     axes.set_xlim(limits[0], limits[1])
@@ -490,13 +520,10 @@ def plot_logistic_regression_2d(axs, X, y, weights, limits):
 
     ww, ll = logistic_regression(X, y)
     if ww is None:
-        utils.plot_unimplemented(axs[0],
-                                 title="Logistic Regression Gradient "
-                                       "Descent"
-                                 )
-        utils.plot_unimplemented(axs[1],
-                                 title="Logistic Regression Results"
-                                 )
+        utils.plot_unimplemented(
+            axs[0], title="Logistic Regression Gradient " "Descent"
+        )
+        utils.plot_unimplemented(axs[1], title="Logistic Regression Results")
         return
 
     print("Number of iterations: %i" % len(ll))
@@ -506,25 +533,43 @@ def plot_logistic_regression_2d(axs, X, y, weights, limits):
     axs[0].set_ylabel("Logistic Loss")
 
     Xm, ym = utils.grid_sample(
-        lambda x: 1 / (1 + np.exp(-utils.affine(x, ww[-1]))), 2, 100,
-        limits
+        lambda x: 1 / (1 + np.exp(-utils.affine(x, ww[-1]))), 2, 100, limits
     )
-    axs[1].imshow(ym.T, cmap="coolwarm", origin="lower",
-        extent=(limits[0], limits[1], limits[0], limits[1]), alpha=0.5, )
-    axs[1].contour(ym.T, levels=[0.5], origin="lower",
-        extent=(limits[0], limits[1], limits[0], limits[1]), )
+    axs[1].imshow(
+        ym.T,
+        cmap="coolwarm",
+        origin="lower",
+        extent=(limits[0], limits[1], limits[0], limits[1]),
+        alpha=0.5,
+    )
+    axs[1].contour(
+        ym.T,
+        levels=[0.5],
+        origin="lower",
+        extent=(limits[0], limits[1], limits[0], limits[1]),
+    )
 
     y0 = -(weights[0] + limits[0] * weights[1]) / weights[2]
     y1 = -(weights[0] + limits[1] * weights[1]) / weights[2]
 
-    axs[1].plot(limits, (y0, y1), linestyle="dashed", color="red",
-                marker=""
-                )
+    axs[1].plot(limits, (y0, y1), linestyle="dashed", color="red", marker="")
 
-    axs[1].plot(X[y == 0, 1], X[y == 0, 2], linestyle="", color="orange",
-        marker="v", label="Class 0", )
-    axs[1].plot(X[y == 1, 1], X[y == 1, 2], linestyle="",
-        color="darkorchid", marker="o", label="Class 1", )
+    axs[1].plot(
+        X[y == 0, 1],
+        X[y == 0, 2],
+        linestyle="",
+        color="orange",
+        marker="v",
+        label="Class 0",
+    )
+    axs[1].plot(
+        X[y == 1, 1],
+        X[y == 1, 2],
+        linestyle="",
+        color="darkorchid",
+        marker="o",
+        label="Class 1",
+    )
 
     axs[1].set_xlabel("$x_1$")
     axs[1].set_ylabel("$x_2$")
@@ -538,17 +583,19 @@ def plot_logistic_regression_2d(axs, X, y, weights, limits):
 
 
 def process_args():
-    ap = argparse.ArgumentParser(
-        description="week 2 coursework script for COMP0088"
-        )
-    ap.add_argument("-s", "--seed", help="seed random number generator",
-        type=int, default=None
+    ap = argparse.ArgumentParser(description="week 2 coursework script for COMP0088")
+    ap.add_argument(
+        "-s", "--seed", help="seed random number generator", type=int, default=None
     )
-    ap.add_argument("-n", "--num_samples",
-        help="number of samples to generate and fit", type=int,
-        default=50, )
-    ap.add_argument("file", help="name of output file to produce",
-        nargs="?", default="week_2.pdf"
+    ap.add_argument(
+        "-n",
+        "--num_samples",
+        help="number of samples to generate and fit",
+        type=int,
+        default=50,
+    )
+    ap.add_argument(
+        "file", help="name of output file to produce", nargs="?", default="week_2.pdf"
     )
     return ap.parse_args()
 
@@ -563,40 +610,30 @@ if __name__ == "__main__":
     axs = fig.subplots(nrows=2, ncols=2)
 
     print("Q1: testing unregularised least squares")
-    X, y = generate_noisy_linear(args.num_samples, WEIGHTS, 0.5, LIMITS,
-                                 rng
-                                 )
+    X, y = generate_noisy_linear(args.num_samples, WEIGHTS, 0.5, LIMITS, rng)
     if X is None:
         print("(week 1) linear generation not implemented")
         utils.plot_unimplemented(axs[0, 0], title="Ridge Regression")
     else:
         w = ridge_closed(utils.add_x0(X), y)
 
-        print("true weights: %.2f, %.2f, %.2f" % (
-        WEIGHTS[0], WEIGHTS[1], WEIGHTS[2])
-              )
+        print("true weights: %.2f, %.2f, %.2f" % (WEIGHTS[0], WEIGHTS[1], WEIGHTS[2]))
 
         if w is None:
             print("regression not implemented")
             utils.plot_unimplemented(axs[0, 0], title="Ridge Regression")
         else:
-            print(
-                "regressed weights: %.2f, %.2f, %.2f" % (w[0], w[1], w[2])
-                )
+            print("regressed weights: %.2f, %.2f, %.2f" % (w[0], w[1], w[2]))
             print("squared error: %.2g" % np.dot(WEIGHTS - w, WEIGHTS - w))
 
             print("plotting regularised least squares")
-            X, y = generate_noisy_linear(args.num_samples, WEIGHTS[1:], 3,
-                                         LIMITS, rng
-                                         )
-            plot_ridge_regression_1d(axs[0, 0], X, y, WEIGHTS[1:], LIMITS,
-                np.arange(5) * 25
+            X, y = generate_noisy_linear(args.num_samples, WEIGHTS[1:], 3, LIMITS, rng)
+            plot_ridge_regression_1d(
+                axs[0, 0], X, y, WEIGHTS[1:], LIMITS, np.arange(5) * 25
             )
 
     print("\nQ2: plotting 1D polynomial fits")
-    X, y = generate_noisy_poly_1d(args.num_samples, WEIGHTS, 3, LIMITS,
-                                  rng
-                                  )
+    X, y = generate_noisy_poly_1d(args.num_samples, WEIGHTS, 3, LIMITS, rng)
     if X is None:
         print("poly generation not implemented")
         utils.plot_unimplemented(axs[0, 1], title="Polynomial Fitting")
@@ -604,27 +641,30 @@ if __name__ == "__main__":
         plot_poly_fit_1d(axs[0, 1], X, y, WEIGHTS, LIMITS, [1, 2, 3, 4], 0)
 
     print("\nQ3: testing gradient descent")
-    xx, ll = gradient_descent(10, lambda x: x * x - 2 * x + 1,
-        lambda x: 2 * x - 2, lr=0.1, loss_stop=1e-6, z_stop=1e-6, )
+    xx, ll = gradient_descent(
+        10,
+        lambda x: x * x - 2 * x + 1,
+        lambda x: 2 * x - 2,
+        lr=0.1,
+        loss_stop=1e-6,
+        z_stop=1e-6,
+    )
     if xx is None:
         print("gradient descent not implemented")
     else:
-        print("final estimate %.3g after %i iterations (loss %.2g)" % (
-        xx[-1], len(ll), ll[-1])
+        print(
+            "final estimate %.3g after %i iterations (loss %.2g)"
+            % (xx[-1], len(ll), ll[-1])
         )
 
     print("\nQ4: testing logistic regression with 2 feature dimensions")
-    X, y = generate_linearly_separable(args.num_samples, WEIGHTS, LIMITS,
-                                       rng
-                                       )
+    X, y = generate_linearly_separable(args.num_samples, WEIGHTS, LIMITS, rng)
     if X is None:
         print("(week 1) linearly-separable generation not implemented")
-        utils.plot_unimplemented(axs[1, 0],
-            title="Logistic Regression Gradient Descent"
+        utils.plot_unimplemented(
+            axs[1, 0], title="Logistic Regression Gradient Descent"
         )
-        utils.plot_unimplemented(axs[1, 1],
-                                 title="Logistic Regression Results"
-                                 )
+        utils.plot_unimplemented(axs[1, 1], title="Logistic Regression Results")
     else:
         X0 = utils.add_x0(X)
 

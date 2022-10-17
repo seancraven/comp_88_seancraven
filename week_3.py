@@ -53,19 +53,13 @@ def nearest_neighbours_predict(train_X, train_y, test_X, neighbours=1):
     assert all(train_y) >= 0
     assert train_X.shape[0] == train_y.shape[0]
     assert train_X.shape[1] == test_X.shape[1]
-    min_dist = np.ones(neighbours) * -1
-    min_dist_class = np.empty_like(min_dist)
+
     test_y = np.empty(test_X.shape[0])
-    for j, x in enumerate(train_X):
-        distance = np.sum(train_X**2 - x**2, axis=0)
-        for i, dist in enumerate(distance):
-            if (dist < np.max(min_dist)) and (i != j):
-                index = np.argmax(min_dist)
-                min_dist[index] = dist
-                min_dist_class[index] = train_y[i]
-        entry, count = np.unique(min_dist, return_counts=True)
-        test_y[j] = entry[np.argmax(count)]
-    assert test_y.shape[0] == test_X.shape[0]
+    for j, x in enumerate(test_X):
+        distance = np.sum((train_X - x)**2, axis=1)
+        sorted_args = np.argsort(distance)
+        min_class = train_y[sorted_args[:neighbours]]
+        test_y[j] = modal_class(None, min_class)
     return test_y
 
 
@@ -91,6 +85,8 @@ def misclassification(y, cls, weights=None):
     return np.sum(weights[y != cls])
 
 
+## Note:
+## Current problem is that I misunderstood how the segmentation works.
 def decision_node_split(X, y, cls=None, weights=None, min_size=3):
     """
     Find (by brute force) a split point that best improves the weighted
@@ -122,43 +118,42 @@ def decision_node_split(X, y, cls=None, weights=None, min_size=3):
     """
     assert X.shape[0] == len(y)
     # Determine split target
+    cls = modal_class(cls, y)
+    thresh = np.inf
+    mis = np.inf
+    for i, feature in enumerate(X.T):
+        thresholds = feature
+        for th in thresholds:
+            y_subset = y[feature >= th]
+            mis_th = misclassification(y_subset, cls, weights)
+            if (
+                mis_th < mis
+                and len(y_subset) > min_size
+                and (len(y) - len(y_subset)) > min_size
+            ):
+                mis = mis_th
+                thresh = th
+                thresh_feature = i
+                c1 = cls
+                c0 = None
+
+    if mis == np.inf:
+        c1 = cls
+        c0 = cls
+        thresh_feature = None
+        thresh = None
+    return thresh_feature, thresh, c0, c1
+
+
+def modal_class(cls, y):
+    entry, count = np.unique(y, return_counts=True)
     if cls is None:
-        entry, count = np.unique(y, return_counts=True)
         modal_cls = entry[np.argmax(count)]
         if isinstance(modal_cls, np.ndarray):
             cls = np.min(modal_cls)
         else:
             cls = modal_cls
-    assert cls == 0 or cls == 1
-
-    thresh = np.inf
-    mis = np.inf
-    for i, feature in enumerate(X.T):
-        thresholds = (feature - np.roll(feature, 1))[:-1]
-        for th in thresholds:
-            c1_test = y[feature >= th]
-            mis_th = misclassification(c1_test, cls, weights)
-            if (
-                mis_th < mis
-                and len(c1_test) > min_size
-                and (len(y) - len(c1_test)) > min_size
-            ):
-                thresh = th
-                thresh_feature = i
-                c1 = c1_test
-                c0 = y[feature < th]
-
-    if mis == np.inf:
-        if cls == 0:
-            c0 = y
-            c1 = None
-        elif cls == 1:
-            c0 = None
-            c1 = y
-        thresh_feature = None
-        thresh = None
-
-    return thresh_feature, thresh, c0, c1
+    return cls
 
 
 def decision_tree_train(
@@ -203,40 +198,36 @@ def decision_tree_train(
         kind = "leaf"
     # No more recursion
     if kind == "leaf":
-        if c0 is not None:
-            return {"kind": kind, "class": 0}
-        elif c1 is not None:
-            return {"kind": kind, "class": 1}
-        else:
-            print("shit went down, leaf problem")
+        cls = modal_class(cls, y)
+        return {"kind": kind, "class": cls}
+
     # Recursion
     elif kind == "decision":
-        X_c0, y_c0 = X[:thresh, thresh_feature], y[:thresh]
-        X_c1, y_c1 = X[thresh:, thresh_feature], y[thresh:]
+        thresh_index = X[:, thresh_feature] >= thresh
+        X_c0, y_c0 = X[~thresh_index], y[~thresh_index]
+        X_c1, y_c1 = X[thresh_index], y[thresh_index]
+
         return {
             "kind": kind,
             "feature": thresh_feature,
             "thresh": thresh,
-            "below": decision_node_split(
-                X_c0, y_c0, cls=0, weights=weights, depth=depth + 1, max_depth=max_depth
+            "below": decision_tree_train(
+                X_c0,
+                y_c0,
+                cls=1,
+                weights=weights,
+                depth=depth + 1,
+                max_depth=max_depth,
             ),
-            "above": decision_node_split(
-                X_c1, y_c1, cls=1, weights=weights, depth=depth + 1, max_depth=max_depth
+            "above": decision_tree_train(
+                X_c1,
+                y_c1,
+                cls=c0,
+                weights=weights,
+                depth=depth + 1,
+                max_depth=max_depth,
             ),
         }
-
-
-
-class RecursionLimit:
-    def __init__(self, limit):
-        self.limit = limit
-
-    def __enter__(self):
-        self.old_limit = sys.getrecursionlimit()
-        sys.setrecursionlimit(self.limit)
-
-    def __exit__(self):
-        sys.setrecursionlimit(self.old_limit)
 
 
 def decision_tree_predict(tree, X):
@@ -252,11 +243,10 @@ def decision_tree_predict(tree, X):
         y: the predicted labels
     """
     y = []
-
     for x in X:
         current_node = tree
         while current_node["kind"] != "leaf":
-            if current_node["threshold"] >= x[current_node["feature"]]:
+            if current_node["thresh"] >= x[current_node["feature"]]:
                 current_node = current_node["above"]
             else:
                 current_node = current_node["below"]
@@ -357,12 +347,22 @@ def adaboost_predict(trees, alphas, X):
 
 
 def process_args():
-    ap = argparse.ArgumentParser(description="week 3 coursework script for COMP0088")
-    ap.add_argument(
-        "-s", "--seed", help="seed random number generator", type=int, default=None
+    ap = argparse.ArgumentParser(
+        description="week 3 coursework script for COMP0088"
     )
     ap.add_argument(
-        "-n", "--num_samples", help="number of samples to use", type=int, default=50
+        "-s",
+        "--seed",
+        help="seed random number generator",
+        type=int,
+        default=None,
+    )
+    ap.add_argument(
+        "-n",
+        "--num_samples",
+        help="number of samples to use",
+        type=int,
+        default=50,
     )
     ap.add_argument(
         "-k",
@@ -372,7 +372,11 @@ def process_args():
         default=3,
     )
     ap.add_argument(
-        "-m", "--min_size", help="smallest acceptable tree node", type=int, default=3
+        "-m",
+        "--min_size",
+        help="smallest acceptable tree node",
+        type=int,
+        default=3,
     )
     ap.add_argument(
         "-w",
@@ -402,7 +406,10 @@ def process_args():
         default="week_3_data.csv",
     )
     ap.add_argument(
-        "file", help="name of output file to produce", nargs="?", default="week_3.pdf"
+        "file",
+        help="name of output file to produce",
+        nargs="?",
+        default="week_3.pdf",
     )
     return ap.parse_args()
 
@@ -426,7 +433,9 @@ if __name__ == "__main__":
     )
     if dummy is None:
         print("decision tree not implemented")
-        utils.plot_unimplemented(axs[0, 0], f"{args.neighbours}-Nearest Neighbours")
+        utils.plot_unimplemented(
+            axs[0, 0], f"{args.neighbours}-Nearest Neighbours"
+        )
     else:
         print(f"Q1: plotting {args.neighbours}-nearest neighbours fit")
         nn_cls = lambda z: nearest_neighbours_predict(
@@ -444,11 +453,15 @@ if __name__ == "__main__":
     print("Q2: testing misclassification error")
     all_right = misclassification(np.ones(3), 1)
     all_wrong = misclassification(np.ones(3), 0)
-    fifty_fifty = misclassification(np.concatenate((np.ones(3), np.zeros(3))), 1)
+    fifty_fifty = misclassification(
+        np.concatenate((np.ones(3), np.zeros(3))), 1
+    )
 
     right_msg = "correct" if np.isclose(all_right, 0) else "wrong, should be 0"
     wrong_msg = "correct" if np.isclose(all_wrong, 1) else "wrong, should be 1"
-    fifty_msg = "correct" if np.isclose(fifty_fifty, 0.5) else "wrong should b 0.5"
+    fifty_msg = (
+        "correct" if np.isclose(fifty_fifty, 0.5) else "wrong should b 0.5"
+    )
 
     print(f" all right: {all_right} - {right_msg}")
     print(f" all wrong: {all_wrong} - {wrong_msg}")
@@ -464,11 +477,18 @@ if __name__ == "__main__":
         print("Q2: plotting decision tree fit")
         tree_cls = lambda z: decision_tree_predict(tree, z)
         utils.plot_classification_map(
-            axs[0, 1], tree_cls, X, y, resolution=args.resolution, title="Decision Tree"
+            axs[0, 1],
+            tree_cls,
+            X,
+            y,
+            resolution=args.resolution,
+            title="Decision Tree",
         )
 
     print(f"Q3: fitting random forest with {args.forest} trees")
-    forest = random_forest_train(X, y, args.forest, rng=rng, min_size=args.min_size)
+    forest = random_forest_train(
+        X, y, args.forest, rng=rng, min_size=args.min_size
+    )
 
     if forest is None:
         print("random forest not implemented")

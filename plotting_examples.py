@@ -20,6 +20,8 @@ import argparse
 
 import numpy as np
 import numpy.random
+import matplotlib
+matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 
 rng = numpy.random.default_rng()
@@ -130,7 +132,7 @@ if __name__ == '__main__':
     
     # save to a PDF (other formats are also possible)
     fig.savefig('plotting_examples.pdf')
-    
+    plt.show()
     # close the figure
     # in this case the script is about to exit, so it doesn't matter
     # but in general you should dispose of plotting objects once you're done with them

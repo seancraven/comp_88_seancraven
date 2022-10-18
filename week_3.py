@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 import utils
-from scipy.stats import mode
+from scipy.stats import bernoulli
 
 
 #### ADD YOUR CODE BELOW
@@ -56,17 +56,17 @@ def nearest_neighbours_predict(train_X, train_y, test_X, neighbours=1):
 
     test_y = np.empty(test_X.shape[0])
     for j, x in enumerate(test_X):
-        distance = np.sum((train_X - x)**2, axis=1)
+        distance = np.sum((train_X - x) ** 2, axis=1)
         sorted_args = np.argsort(distance)
         min_class = train_y[sorted_args[:neighbours]]
-        test_y[j] = modal_class(None, min_class)
+        test_y[j] = modal(min_class)
     return test_y
 
 
 # -- Question 2 --
 
 
-def misclassification(y, cls, weights=None):
+def misclassification(y, cls, weights=None) -> float:
     """
     Calculate (optionally-weighted) misclassification error for
     a given set of labels if assigned the given class.
@@ -82,11 +82,11 @@ def misclassification(y, cls, weights=None):
     """
     if not weights:
         weights = np.ones_like(y) / y.shape[0]
+    else:
+        weights = weights/np.sum(weights)
     return np.sum(weights[y != cls])
 
 
-## Note:
-## Current problem is that I misunderstood how the segmentation works.
 def decision_node_split(X, y, cls=None, weights=None, min_size=3):
     """
     Find (by brute force) a split point that best improves the weighted
@@ -116,44 +116,49 @@ def decision_node_split(X, y, cls=None, weights=None, min_size=3):
         c1: class assigned to the set with feature >= thresh
             (or None, if no split)
     """
-    assert X.shape[0] == len(y)
-    # Determine split target
-    cls = modal_class(cls, y)
-    thresh = np.inf
-    mis = np.inf
-    for i, feature in enumerate(X.T):
-        thresholds = feature
-        for th in thresholds:
-            y_subset = y[feature >= th]
-            mis_th = misclassification(y_subset, cls, weights)
-            if (
-                mis_th < mis
-                and len(y_subset) > min_size
-                and (len(y) - len(y_subset)) > min_size
-            ):
-                mis = mis_th
-                thresh = th
-                thresh_feature = i
-                c1 = cls
-                c0 = None
-
-    if mis == np.inf:
-        c1 = cls
-        c0 = cls
-        thresh_feature = None
-        thresh = None
-    return thresh_feature, thresh, c0, c1
-
-
-def modal_class(cls, y):
-    entry, count = np.unique(y, return_counts=True)
     if cls is None:
-        modal_cls = entry[np.argmax(count)]
-        if isinstance(modal_cls, np.ndarray):
-            cls = np.min(modal_cls)
-        else:
-            cls = modal_cls
-    return cls
+        cls = modal(y)
+    error_max = misclassification(y, cls, weights=weights)
+    assert X.shape[0] == len(y)
+    thresh_feature = None
+    thresh = None
+    c0 = None
+    c1 = None
+    thresh_list = []
+    for feature, x in enumerate(X.T):
+        thresholds = np.sort(np.unique(x))
+        for th in thresholds:
+            y_sub = y[ind_above_thresh(x, th)]
+            error = misclassification(y_sub, cls, weights=weights)
+            if (
+                    len(y_sub) >= min_size
+                    and (len(y) - len(y_sub)) >= min_size
+                    and error < error_max
+            ):
+                thresh_list.append((error, len(y_sub), feature, th))
+    # Sort the threshold list first by smallest error, then by
+    # size of the subset generated(closest to half of the set at top).
+    thresh_list.sort(key=lambda e: (e[0], abs(y.shape[0]/2 - e[1])))
+
+    if thresh_list:
+        _, _, thresh_feature, thresh = thresh_list[0]
+        c1 = cls
+        c0 = modal(y[~ind_above_thresh(X[:, thresh_feature], thresh)])
+        assert modal(y[ind_above_thresh(X[:, thresh_feature], thresh)]) == c1
+    return thresh_feature, thresh, c0, c1
+def node_split_test(node_split_function):
+    test_size = 100
+    X = np.random.uniform(-5, 5, size=(test_size, 2))
+    y = bernoulli.rvs(0.3, size=test_size)
+    return node_split_function(X,y)
+def ind_above_thresh(array, thresh):
+    assert len(array.shape) == 1
+    return array >= thresh
+
+def modal(array) -> float:
+    entries, counts = np.unique(array, return_counts=True)
+    return entries[np.argmax(counts)]
+
 
 
 def decision_tree_train(
@@ -186,49 +191,17 @@ def decision_tree_train(
             'below' : a nested tree for when feature < thresh (decision)
             'above' : a nested tree for when feature >= thresh (decision)
     """
-    kind = "decision"
-    # Decision on to recurse
-    if depth < max_depth:
-        thresh_feature, thresh, c0, c1 = decision_node_split(
-            X, y, cls, weights, min_size
-        )
-        if thresh is None:
-            kind = "leaf"
+    thresh_feature, thresh, c0, c1 = decision_node_split(X, y, cls, min_size=min_size, weights=weights)
+    if thresh_feature is None or depth == max_depth:
+        return {"kind": "leaf", "class": modal(y)}
     else:
-        kind = "leaf"
-    # No more recursion
-    if kind == "leaf":
-        cls = modal_class(cls, y)
-        return {"kind": kind, "class": cls}
-
-    # Recursion
-    elif kind == "decision":
-        thresh_index = X[:, thresh_feature] >= thresh
-        X_c0, y_c0 = X[~thresh_index], y[~thresh_index]
-        X_c1, y_c1 = X[thresh_index], y[thresh_index]
-
-        return {
-            "kind": kind,
-            "feature": thresh_feature,
-            "thresh": thresh,
-            "below": decision_tree_train(
-                X_c0,
-                y_c0,
-                cls=1,
-                weights=weights,
-                depth=depth + 1,
-                max_depth=max_depth,
-            ),
-            "above": decision_tree_train(
-                X_c1,
-                y_c1,
-                cls=c0,
-                weights=weights,
-                depth=depth + 1,
-                max_depth=max_depth,
-            ),
-        }
-
+        ind_above = ind_above_thresh(X[:, thresh_feature], thresh)
+        X_above, y_above = X[ind_above], y[ind_above]
+        X_below, y_below = X[~ind_above], y[~ind_above]
+        return {"kind": "decision",
+        "feature":thresh_feature,
+        "thresh": thresh,
+        "below": decision_tree_train(X_below, y_below, cls=c0, depth=depth+1, max_depth=max_depth, weights=weights)
 
 def decision_tree_predict(tree, X):
     """
@@ -242,21 +215,11 @@ def decision_tree_predict(tree, X):
     # Returns
         y: the predicted labels
     """
-    y = []
-    for x in X:
-        current_node = tree
-        while current_node["kind"] != "leaf":
-            if current_node["thresh"] >= x[current_node["feature"]]:
-                current_node = current_node["above"]
-            else:
-                current_node = current_node["below"]
-        assert current_node["kind"] == "leaf"
-        y.append(current_node["class"])
-    return np.array(y)
+
 
 
 # -- Question 3 --
-
+    return None
 
 def random_forest_train(X, y, k, rng, min_size=3, max_depth=10):
     """
@@ -347,9 +310,7 @@ def adaboost_predict(trees, alphas, X):
 
 
 def process_args():
-    ap = argparse.ArgumentParser(
-        description="week 3 coursework script for COMP0088"
-    )
+    ap = argparse.ArgumentParser(description="week 3 coursework script for COMP0088")
     ap.add_argument(
         "-s",
         "--seed",
@@ -397,7 +358,7 @@ def process_args():
         "--resolution",
         help="grid sampling resolution for classification plots",
         type=int,
-        default=20,
+        default=100,
     )
     ap.add_argument(
         "-d",
@@ -433,9 +394,7 @@ if __name__ == "__main__":
     )
     if dummy is None:
         print("decision tree not implemented")
-        utils.plot_unimplemented(
-            axs[0, 0], f"{args.neighbours}-Nearest Neighbours"
-        )
+        utils.plot_unimplemented(axs[0, 0], f"{args.neighbours}-Nearest Neighbours")
     else:
         print(f"Q1: plotting {args.neighbours}-nearest neighbours fit")
         nn_cls = lambda z: nearest_neighbours_predict(
@@ -453,15 +412,11 @@ if __name__ == "__main__":
     print("Q2: testing misclassification error")
     all_right = misclassification(np.ones(3), 1)
     all_wrong = misclassification(np.ones(3), 0)
-    fifty_fifty = misclassification(
-        np.concatenate((np.ones(3), np.zeros(3))), 1
-    )
+    fifty_fifty = misclassification(np.concatenate((np.ones(3), np.zeros(3))), 1)
 
     right_msg = "correct" if np.isclose(all_right, 0) else "wrong, should be 0"
     wrong_msg = "correct" if np.isclose(all_wrong, 1) else "wrong, should be 1"
-    fifty_msg = (
-        "correct" if np.isclose(fifty_fifty, 0.5) else "wrong should b 0.5"
-    )
+    fifty_msg = "correct" if np.isclose(fifty_fifty, 0.5) else "wrong should b 0.5"
 
     print(f" all right: {all_right} - {right_msg}")
     print(f" all wrong: {all_wrong} - {wrong_msg}")
@@ -486,9 +441,7 @@ if __name__ == "__main__":
         )
 
     print(f"Q3: fitting random forest with {args.forest} trees")
-    forest = random_forest_train(
-        X, y, args.forest, rng=rng, min_size=args.min_size
-    )
+    forest = random_forest_train(X, y, args.forest, rng=rng, min_size=args.min_size)
 
     if forest is None:
         print("random forest not implemented")

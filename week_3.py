@@ -83,7 +83,7 @@ def misclassification(y, cls, weights=None) -> float:
     if not weights:
         weights = np.ones_like(y) / y.shape[0]
     else:
-        weights = weights/np.sum(weights)
+        weights = weights / np.sum(weights)
     return np.sum(weights[y != cls])
 
 
@@ -126,39 +126,47 @@ def decision_node_split(X, y, cls=None, weights=None, min_size=3):
     c1 = None
     thresh_list = []
     for feature, x in enumerate(X.T):
-        thresholds = np.sort(np.unique(x))
+        thresholds = x
         for th in thresholds:
-            y_sub = y[ind_above_thresh(x, th)]
-            error = misclassification(y_sub, cls, weights=weights)
-            if (
-                    len(y_sub) >= min_size
-                    and (len(y) - len(y_sub)) >= min_size
-                    and error < error_max
-            ):
-                thresh_list.append((error, len(y_sub), feature, th))
+            ind_above = ind_above_thresh(x, th)
+            y_above = y[ind_above]
+            y_below = y[~ind_above]
+            if len(y_below) >= min_size:
+                error = misclassification(y_above, modal(y_above))
+                error_below = misclassification(
+                    y_below,
+                    modal(y_below),
+                )
+                if error_below < error:
+                    error = error_below
+                if len(y_above) >= min_size and error < error_max:
+                    thresh_list.append((error, len(y_above), feature, th))
     # Sort the threshold list first by smallest error, then by
     # size of the subset generated(closest to half of the set at top).
-    thresh_list.sort(key=lambda e: (e[0], abs(y.shape[0]/2 - e[1])))
+    thresh_list.sort(key=lambda e: (e[0], abs(y.shape[0] / 2 - e[1])))
 
     if thresh_list:
         _, _, thresh_feature, thresh = thresh_list[0]
-        c1 = cls
+        c1 = modal(y[ind_above_thresh(X[:, thresh_feature], thresh)])
         c0 = modal(y[~ind_above_thresh(X[:, thresh_feature], thresh)])
-        assert modal(y[ind_above_thresh(X[:, thresh_feature], thresh)]) == c1
     return thresh_feature, thresh, c0, c1
+
+
 def node_split_test(node_split_function):
     test_size = 100
     X = np.random.uniform(-5, 5, size=(test_size, 2))
     y = bernoulli.rvs(0.3, size=test_size)
-    return node_split_function(X,y)
+    return node_split_function(X, y)
+
+
 def ind_above_thresh(array, thresh):
     assert len(array.shape) == 1
     return array >= thresh
 
+
 def modal(array) -> float:
     entries, counts = np.unique(array, return_counts=True)
     return entries[np.argmax(counts)]
-
 
 
 def decision_tree_train(
@@ -191,17 +199,38 @@ def decision_tree_train(
             'below' : a nested tree for when feature < thresh (decision)
             'above' : a nested tree for when feature >= thresh (decision)
     """
-    thresh_feature, thresh, c0, c1 = decision_node_split(X, y, cls, min_size=min_size, weights=weights)
-    if thresh_feature is None or depth == max_depth:
+    thresh_feature, thresh, c0, c1 = decision_node_split(
+        X, y, cls, min_size=min_size, weights=weights
+    )
+    if thresh_feature is None or depth > max_depth:
         return {"kind": "leaf", "class": modal(y)}
     else:
         ind_above = ind_above_thresh(X[:, thresh_feature], thresh)
         X_above, y_above = X[ind_above], y[ind_above]
         X_below, y_below = X[~ind_above], y[~ind_above]
-        return {"kind": "decision",
-        "feature":thresh_feature,
-        "thresh": thresh,
-        "below": decision_tree_train(X_below, y_below, cls=c0, depth=depth+1, max_depth=max_depth, weights=weights)
+        print(f"modal below: {modal(y_below)}, modal above: {modal(y_above)}")
+        return {
+            "kind": "decision",
+            "feature": thresh_feature,
+            "thresh": thresh,
+            "below": decision_tree_train(
+                X_below,
+                y_below,
+                cls=c0,
+                depth=depth + 1,
+                max_depth=max_depth,
+                weights=weights,
+            ),
+            "above": decision_tree_train(
+                X_above,
+                y_above,
+                cls=c1,
+                depth=depth + 1,
+                max_depth=max_depth,
+                weights=weights,
+            ),
+        }
+
 
 def decision_tree_predict(tree, X):
     """
@@ -216,10 +245,18 @@ def decision_tree_predict(tree, X):
         y: the predicted labels
     """
 
+    # -- Question 3 --
+    y = []
+    for x in X:
+        node = tree
+        while node["kind"] != "leaf":
+            if x[node["feature"]] >= node["thresh"]:
+                node = node["above"]
+            else:
+                node = node["below"]
+        y.append(node["class"])
+    return np.array(y)
 
-
-# -- Question 3 --
-    return None
 
 def random_forest_train(X, y, k, rng, min_size=3, max_depth=10):
     """
@@ -423,7 +460,7 @@ if __name__ == "__main__":
     print(f" fifty-fifty: {fifty_fifty} - {fifty_msg}")
 
     print("Q2: fitting decision tree")
-    tree = decision_tree_train(X, y, min_size=args.min_size)
+    tree = decision_tree_train(X, y, min_size=args.min_size, max_depth=5)
 
     if tree is None:
         print("decision tree not implemented")

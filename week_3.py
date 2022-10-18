@@ -208,7 +208,6 @@ def decision_tree_train(
         ind_above = ind_above_thresh(X[:, thresh_feature], thresh)
         X_above, y_above = X[ind_above], y[ind_above]
         X_below, y_below = X[~ind_above], y[~ind_above]
-        print(f"modal below: {modal(y_below)}, modal above: {modal(y_above)}")
         return {
             "kind": "decision",
             "feature": thresh_feature,
@@ -269,15 +268,25 @@ def random_forest_train(X, y, k, rng, min_size=3, max_depth=10):
             samples, must be same length as number of rows in X
         k: the number of trees in the forest
         rng: an instance of numpy.random.Generator
-            from which to draw random numbers        min_size: don't create child nodes smaller than this
+            from which to draw random numbers
+        min_size: don't create child nodes smaller than this
         max_depth: maximum tree depth
 
     # Returns:
         forest: a list of tree dicts as returned by decision_tree_train
     """
-
-    # TODO: implement this
-    return None
+    rng = np.random.default_rng(rng)
+    X_y = np.hstack((X, y[:, np.newaxis]))
+    index = np.arange(X.shape[0])
+    forest = []
+    for i in range(k):
+        rng_index = rng.permutation(X.shape[0])
+        X_y_rng = (X_y[rng_index])[int(X.shape[0] * 0.8):]
+        X_rng, y_rng = X_y_rng[:, :-1], X_y_rng[:, -1]
+        forest.append(
+            decision_tree_train(X_rng, y_rng, min_size=min_size, max_depth=max_depth)
+        )
+    return forest
 
 
 def random_forest_predict(forest, X):
@@ -293,8 +302,13 @@ def random_forest_predict(forest, X):
     # Returns
         y: the predicted labels
     """
-    # TODO: implement this
-    return None
+    y = []
+    for x in X:
+        ys = []
+        for tree in forest:
+            ys.append(decision_tree_predict(tree, [x]))
+        y.append(modal(ys))
+    return np.array(y)
 
 
 # -- Question 4 --

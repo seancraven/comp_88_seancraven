@@ -80,14 +80,20 @@ def misclassification(y, cls, weights=None) -> float:
     # Returns
         err: the misclassification error of the candidate labels
     """
-    if not weights:
+    if weights is None:
         weights = np.ones_like(y) / y.shape[0]
     else:
         weights = weights / np.sum(weights)
     return np.sum(weights[y != cls])
 
 
-def decision_node_split(X, y, cls=None, weights=None, min_size=3):
+def decision_node_split(
+    X,
+    y,
+    cls=None,
+    weights=None,
+    min_size=3,
+):
     """
     Find (by brute force) a split point that best improves the weighted
     misclassification error rate compared to the original one (or not, if
@@ -116,15 +122,17 @@ def decision_node_split(X, y, cls=None, weights=None, min_size=3):
         c1: class assigned to the set with feature >= thresh
             (or None, if no split)
     """
+    assert X.shape[0] == len(y)
     if cls is None:
         cls = modal(y)
-    error_max = misclassification(y, cls, weights=weights)
-    assert X.shape[0] == len(y)
+
     thresh_feature = None
     thresh = None
     c0 = None
     c1 = None
+
     thresh_list = []
+    error_max = 2
     for feature, x in enumerate(X.T):
         thresholds = x
         for th in thresholds:
@@ -132,13 +140,27 @@ def decision_node_split(X, y, cls=None, weights=None, min_size=3):
             y_above = y[ind_above]
             y_below = y[~ind_above]
             if len(y_below) >= min_size:
-                error = misclassification(y_above, modal(y_above))
-                error_below = misclassification(
-                    y_below,
-                    modal(y_below),
-                )
+
+                if weights is not None:
+                    error = misclassification(
+                        y_above, modal(y_above), weights[ind_above]
+                    )
+                    error_below = misclassification(
+                        y_below, modal(y_below), weights[~ind_above]
+                    )
+                else:
+                    error = misclassification(
+                        y_above,
+                        modal(y_above),
+                    )
+                    error_below = misclassification(
+                        y_below,
+                        modal(y_below),
+                    )
+
                 if error_below < error:
                     error = error_below
+
                 if len(y_above) >= min_size and error < error_max:
                     thresh_list.append((error, len(y_above), feature, th))
     # Sort the threshold list first by smallest error, then by
@@ -202,12 +224,18 @@ def decision_tree_train(
     thresh_feature, thresh, c0, c1 = decision_node_split(
         X, y, cls, min_size=min_size, weights=weights
     )
-    if thresh_feature is None or depth > max_depth:
+    if thresh_feature is None or depth >= max_depth:
         return {"kind": "leaf", "class": modal(y)}
     else:
         ind_above = ind_above_thresh(X[:, thresh_feature], thresh)
         X_above, y_above = X[ind_above], y[ind_above]
         X_below, y_below = X[~ind_above], y[~ind_above]
+        if weights is None:
+            weights_above = None
+            weights_below = None
+        else:
+            weights_above = weights[ind_above]
+            weights_below = weights[~ind_above]
         return {
             "kind": "decision",
             "feature": thresh_feature,
@@ -218,7 +246,7 @@ def decision_tree_train(
                 cls=c0,
                 depth=depth + 1,
                 max_depth=max_depth,
-                weights=weights,
+                weights=weights_below,
             ),
             "above": decision_tree_train(
                 X_above,
@@ -226,7 +254,7 @@ def decision_tree_train(
                 cls=c1,
                 depth=depth + 1,
                 max_depth=max_depth,
-                weights=weights,
+                weights=weights_above,
             ),
         }
 
@@ -275,13 +303,12 @@ def random_forest_train(X, y, k, rng, min_size=3, max_depth=10):
     # Returns:
         forest: a list of tree dicts as returned by decision_tree_train
     """
-    rng = np.random.default_rng(rng)
+    rng = np.random.default_rng(11)
     X_y = np.hstack((X, y[:, np.newaxis]))
-    index = np.arange(X.shape[0])
     forest = []
     for i in range(k):
         rng_index = rng.permutation(X.shape[0])
-        X_y_rng = (X_y[rng_index])[int(X.shape[0] * 0.8):]
+        X_y_rng = (X_y[rng_index])[int(X.shape[0] * 0.8) :]
         X_rng, y_rng = X_y_rng[:, :-1], X_y_rng[:, -1]
         forest.append(
             decision_tree_train(X_rng, y_rng, min_size=min_size, max_depth=max_depth)
@@ -335,8 +362,31 @@ def adaboost_train(X, y, k, min_size=1, max_depth=1, epsilon=1e-8):
         alphas: a vector of weights indicating how much credence to
             given each of the decision tree predictions
     """
-    # TODO: implement this
-    return None, None
+    trees = []
+    alphas = []
+    weights = np.ones_like(y) / y.shape[0]
+    for t in range(k):
+        h = decision_tree_train(
+            X, y, weights=weights, min_size=min_size, max_depth=max_depth
+        )
+        h_pred = decision_tree_predict(h, X)
+        error = adaboost_misclassification(y, h_pred, weights)
+        alpha = np.log((1 - error) / (epsilon + error))
+        weights = weight_update(y, h_pred, weights, alpha)
+        trees.append(h)
+        alphas.append(alpha)
+    return trees, np.array(alphas)
+
+
+def weight_update(y, y_hat, w, alpha):
+    for i, (y_i, y_hat_i, w_i) in enumerate(zip(y, y_hat, w)):
+        if y_i == y_hat_i:
+            w[i] = w_i * np.exp(alpha)
+    return w / np.sum(w)
+
+
+def adaboost_misclassification(y, y_hat, w):
+    return np.sum(abs(y - y_hat)*w)
 
 
 def adaboost_predict(trees, alphas, X):
@@ -353,8 +403,19 @@ def adaboost_predict(trees, alphas, X):
     # Returns
         y: the predicted labels
     """
-    # TODO: implement this
-    return None
+    y_hat = []
+    for x in X:
+        predictor_sum = 0
+        for tree, alpha in zip(trees, alphas):
+            y_pred = decision_tree_predict(tree, [x])
+            if y_pred == 0:
+                y_pred = -1
+            predictor_sum += y_pred*alpha
+        if predictor_sum >= 0:
+            y_hat.append(1)
+        else:
+            y_hat.append(0)
+    return np.array(y_hat)
 
 
 #### TEST DRIVER

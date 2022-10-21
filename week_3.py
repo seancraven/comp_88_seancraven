@@ -65,7 +65,7 @@ def nearest_neighbours_predict(train_X, train_y, test_X, neighbours=1):
 
 # -- Question 2 --
 
-
+# I think I might have some underflow issues.
 def misclassification(y, cls, weights=None) -> float:
     """
     Calculate (optionally-weighted) misclassification error for
@@ -83,7 +83,8 @@ def misclassification(y, cls, weights=None) -> float:
     if weights is None:
         weights = np.ones_like(y) / y.shape[0]
     else:
-        weights = weights / np.sum(weights)
+        log_weights = np.log(weights) - np.log(np.sum(weights))
+        weights = np.exp(log_weights)
     return np.sum(weights[y != cls])
 
 
@@ -123,50 +124,36 @@ def decision_node_split(
             (or None, if no split)
     """
     assert X.shape[0] == len(y)
-    if cls is None:
-        cls = modal(y)
-
+    if weights is None:
+        weights = np.ones_like(y)/y.shape[0]
+# Set values to None.
     thresh_feature = None
     thresh = None
     c0 = None
     c1 = None
 
     thresh_list = []
-    error_max = 2
+    error_max = np.inf
     for feature, x in enumerate(X.T):
         thresholds = x
         for th in thresholds:
             ind_above = ind_above_thresh(x, th)
             y_above = y[ind_above]
             y_below = y[~ind_above]
-            if len(y_below) >= min_size:
-
-                if weights is not None:
-                    error = misclassification(
-                        y_above, modal(y_above), weights[ind_above]
-                    )
-                    error_below = misclassification(
-                        y_below, modal(y_below), weights[~ind_above]
-                    )
-                else:
-                    error = misclassification(
-                        y_above,
-                        modal(y_above),
-                    )
-                    error_below = misclassification(
-                        y_below,
-                        modal(y_below),
-                    )
-
+            if len(y_below) >= min_size and len(y_above) >= min_size:
+                error = misclassification(
+                    y_above, modal(y_above), weights[ind_above]
+                )
+                error_below = misclassification(
+                    y_below, modal(y_below), weights[~ind_above]
+                )
                 if error_below < error:
                     error = error_below
-
                 if len(y_above) >= min_size and error < error_max:
                     thresh_list.append((error, len(y_above), feature, th))
     # Sort the threshold list first by smallest error, then by
     # size of the subset generated(closest to half of the set at top).
     thresh_list.sort(key=lambda e: (e[0], abs(y.shape[0] / 2 - e[1])))
-
     if thresh_list:
         _, _, thresh_feature, thresh = thresh_list[0]
         c1 = modal(y[ind_above_thresh(X[:, thresh_feature], thresh)])
@@ -364,14 +351,23 @@ def adaboost_train(X, y, k, min_size=1, max_depth=1, epsilon=1e-8):
     """
     trees = []
     alphas = []
-    weights = np.ones_like(y) / y.shape[0]
+    weights = np.ones_like(y)/y.shape[0]
     for t in range(k):
         h = decision_tree_train(
             X, y, weights=weights, min_size=min_size, max_depth=max_depth
         )
         h_pred = decision_tree_predict(h, X)
-        error = adaboost_misclassification(y, h_pred, weights)
-        alpha = np.log((1 - error) / (epsilon + error))
+        above_class = h["above"]["class"]
+        below_class = h["below"]["class"]
+        thresh = h["thresh"]
+        ind_above = ind_above_thresh(X[:, h["feature"]], thresh)
+        y_above = y[ind_above]
+        y_below = y[~ind_above]
+        error = misclassification(y_above, above_class, weights[ind_above])
+        error_below = misclassification(y_below, below_class, weights[~ind_above])
+        if error < error_below:
+            error = error_below
+        alpha = np.log(1 - error) - np.log(error)
         weights = weight_update(y, h_pred, weights, alpha)
         trees.append(h)
         alphas.append(alpha)
@@ -380,9 +376,11 @@ def adaboost_train(X, y, k, min_size=1, max_depth=1, epsilon=1e-8):
 
 def weight_update(y, y_hat, w, alpha):
     for i, (y_i, y_hat_i, w_i) in enumerate(zip(y, y_hat, w)):
-        if y_i == y_hat_i:
+        if y_i != y_hat_i:
             w[i] = w_i * np.exp(alpha)
-    return w / np.sum(w)
+        else:
+            w[i] = w_i
+    return np.exp(np.log(w) - np.log(np.sum(w)))
 
 
 def adaboost_misclassification(y, y_hat, w):

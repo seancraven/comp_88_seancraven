@@ -34,12 +34,19 @@ import utils
 
 # -- Question 1 --
 
-def generate_margined_binary_data ( num_samples, count, limits, rng ):
+
+def generate_margined_binary_data(num_samples, count, limits, rng):
     """
     Draw random samples from a linearly-separable binary model
     with some non-negligible margin between classes. (The exact
     form of the model is up to you.)
-    
+
+    Model splits feature space along axis alligned boundary.
+    Data is distributed uniformally such that in the feature of
+    interest is distributed: c1~U[1,upper_limit], c0~U[-1, lower_limit]
+
+    |Limits| > 1.
+
     # Arguments
         num_samples: number of samples to generate
             (ie, the number of rows in the returned X
@@ -58,11 +65,21 @@ def generate_margined_binary_data ( num_samples, count, limits, rng ):
               num_samples x count
         y: a vector of num_samples binary labels
     """
-    # TODO: implement this
-    return None, None
+    for i in limits:
+        assert abs(i) > 1
+    c1 = np.ones(((num_samples + 1) // 2, 2))
+    c0 = np.zeros((num_samples // 2, 2))
+    c1[:, 0] = np.random.uniform(1, np.max(limits), c1.shape[0])
+    c0[:, 0] = np.random.uniform(-1, np.min(limits), c0.shape[0])
+    output = np.random.uniform(*limits, size=(c1.shape[0] + c0.shape[0], count + 1))
+    output[:, -1] = np.hstack((c1[:, -1], c0[:, -1])).reshape((num_samples,))
+    output[:, np.random.randint(0, count - 1, 1, dtype=int)] = np.hstack(
+        (c1[:, 0], c0[:, 0])
+    ).reshape((num_samples, 1))
+    return output[:, :-1], output[:, -1]
 
 
-def geometric_margin ( X, y, weights, bias ):
+def geometric_margin(X, y, weights, bias):
     """
     Calculate the geometric margin for a given
     dataset and linear decision boundary. May be
@@ -79,27 +96,27 @@ def geometric_margin ( X, y, weights, bias ):
            length as the number of features
         bias: scalar intercept value specifying the position
            of the boundary
-    
+
     # Returns:
         g: the geometric margin -- ie, the minimum distance
            of any of the samples on the correct side of the
            boundary (or the negative greatest distance on the
            wrong side)
     """
-    assert(X.shape[0] == len(y))
-    assert(X.shape[1] == len(weights))
-    
-    # TODO: implement this
-    return None
-    
+    assert X.shape[0] == len(y)
+    assert X.shape[1] == len(weights)
+    assert any(y) != 0
+    return np.min(y * (X @ weights + bias) / np.linalg.norm(weights))
+
 
 # -- Question 2 --
 
-def perceptron_train ( X, y, alpha=1, max_epochs=50, include_bias=True ):
+
+def perceptron_train(X, y, alpha=1, max_epochs=50, include_bias=True):
     """
     Learn a linear decision boundary using the
     perceptron algorithm.
-    
+
     # Arguments
         X: an array of sample data, where rows are samples
             and columns are features.
@@ -111,7 +128,7 @@ def perceptron_train ( X, y, alpha=1, max_epochs=50, include_bias=True ):
             training set before admitting defeat
         include_bias: whether to automatically add a
             a constant bias feature x0
-    
+
     # Returns:
         weights: vector of feature weights defining the
             decision boundary, either same length as number of
@@ -119,19 +136,28 @@ def perceptron_train ( X, y, alpha=1, max_epochs=50, include_bias=True ):
             (note that a weights vector will be returned even if
             the algorithm fails to converge)
     """
-    assert(X.shape[0] == len(y))
-    
-    # TODO: implement this
-    return None
+    assert X.shape[0] == len(y)
+    weights = np.random.random(size=X.shape[1] + 1)
+    X_pad = np.ones((X.shape[0], X.shape[1] + 1))
+    X_pad[:, :-1] = X
+    if not include_bias:
+        weights = weights[:-1]
+    else:
+        X = X_pad
+    for i in range(max_epochs):
+        y_hat = (X @ weights >= 0) * 1
+        weights += alpha * (y - y_hat) @ X
+    assert isinstance(weights, np.ndarray)
+    return weights
 
 
-def perceptron_predict ( test_X, weights ):
+def perceptron_predict(test_X, weights):
     """
     Predict binary labels for a dataset using a specified
     decision boundary. (This is intended for us with a boundary
     learned with the perceptron algorithm, but any suitable
     weights vector can be used.)
-    
+
     # Arguments
         test_X: an array of sample data, where rows are samples
             and columns are features.
@@ -140,26 +166,28 @@ def perceptron_predict ( test_X, weights ):
             columns in X or 1 greater -- in the latter case it
             is assumed to contain a bias term, and test_X will
             have a constant term x0=1 prepended
-    
+
     # Returns
         pred_y: a vector of predicted binary labels
             corresponding to the samples in test_X
-        
+
     """
-    assert(test_X.shape[1] in (len(weights),len(weights)-1))
-    
-    # TODO: implement this
-    return None
-    
+    assert test_X.shape[1] in (len(weights), len(weights) - 1)
+    if test_X.shape[1] == len(weights):
+        return 1 * (test_X @ weights >= 0)
+    else:
+        return 1 * (test_X @ weights[:-1] + weights[-1] >= 0)
+
 
 # -- Question 3 --
 
-def generate_binary_nonlinear_2d ( num_samples, limits, rng ):
+
+def generate_binary_nonlinear_2d(num_samples, limits, rng):
     """
     Draw random samples from a binary model that is *not*
     linearly separable in its 2D feature space. (The exact
     form of the model is up to you.)
-    
+
     # Arguments
         num_samples: number of samples to generate
             (ie, the number of rows in the returned X
@@ -177,17 +205,36 @@ def generate_binary_nonlinear_2d ( num_samples, limits, rng ):
               num_samples x count
         y: a vector of num_samples binary labels
     """
-    # TODO: implement this
-    return None, None
+    count = 2
+    for i in limits:
+        assert abs(i) > 1
+    c1 = np.ones(((num_samples + 1) // 2, 2))
+    c0 = np.zeros((num_samples // 2, 2))
+    c1[:, 0] = np.random.normal(
+        loc=(np.max(limits)) / 2, scale=np.max(limits) / 3, size=c1.shape[0]
+    )
+    c1[:, 0][c1[:, 0] > np.max(limits)] = np.max(limits)
+
+    c0[:, 0] = np.random.normal(
+        loc=(np.min(limits) / 2), scale=abs(np.min(limits)) / 3, size=c0.shape[0]
+    )
+    c0[:, 0][c0[:, 0] < np.min(limits)] = np.min(limits)
+    output = np.random.uniform(*limits, size=(c1.shape[0] + c0.shape[0], count + 1))
+    output[:, -1] = np.hstack((c1[:, -1], c0[:, -1])).reshape((num_samples,))
+    output[:, np.random.randint(0, count - 1, 1, dtype=int)] = np.hstack(
+        (c1[:, 0], c0[:, 0])
+    ).reshape((num_samples, 1))
+    return output[:, :-1], output[:, -1]
 
 
 # -- Question 4 --
-    
-def custom_kernel ( X1, X2, gamma=0.5 ):
+
+
+def custom_kernel(X1, X2, gamma=0.5):
     """
     Custom kernel function for use with a support
     vector classifier.
-    
+
     # Arguments
         X1: first array of sample data for comparison,
             with samples as rows and features as
@@ -198,163 +245,242 @@ def custom_kernel ( X1, X2, gamma=0.5 ):
             as X1)
         gamma: a scaling hyperparameter for the similarity
             function
-    
+
     # Returns
         K: the Gram matrix for the kernel, giving the
            kernel space inner products for each pairing of
            a vector in X1 with one in X2 (size N1 x N2)
     """
-    assert(X1.shape[1] == X2.shape[1])
-    
-    # TODO: implement this
-    return None
+    assert X1.shape[1] == X2.shape[1]
+    k = np.sum(X1[:, np.newaxis]*X2, axis=-1)
+    return (1 + k)**3
+
 
 
 #### TEST DRIVER
 
+
 def process_args():
-    ap = argparse.ArgumentParser(description='week 4 coursework script for COMP0088')
-    ap.add_argument('-s', '--seed', help='seed random number generator', type=int, default=None)
-    ap.add_argument('-n', '--num_samples', help='number of samples to use', type=int, default=50)
-    ap.add_argument('-c', '--cost', help='cost hyperparam for SVMs', type=float, default=1.0)
-    ap.add_argument('-g', '--gamma', help='gamma hyperparam for SVM kernels', type=float, default=0.5)
-    ap.add_argument('-r', '--resolution', help='grid sampling resolution for classification plots', type=int, default=20)
-    ap.add_argument('file', help='name of output file to produce', nargs='?', default='week_4.pdf')
+    ap = argparse.ArgumentParser(description="week 4 coursework script for COMP0088")
+    ap.add_argument(
+        "-s", "--seed", help="seed random number generator", type=int, default=None
+    )
+    ap.add_argument(
+        "-n", "--num_samples", help="number of samples to use", type=int, default=50
+    )
+    ap.add_argument(
+        "-c", "--cost", help="cost hyperparam for SVMs", type=float, default=1.0
+    )
+    ap.add_argument(
+        "-g",
+        "--gamma",
+        help="gamma hyperparam for SVM kernels",
+        type=float,
+        default=0.5,
+    )
+    ap.add_argument(
+        "-r",
+        "--resolution",
+        help="grid sampling resolution for classification plots",
+        type=int,
+        default=20,
+    )
+    ap.add_argument(
+        "file", help="name of output file to produce", nargs="?", default="week_4.pdf"
+    )
     return ap.parse_args()
 
-def plot_svm_map ( axes, svm, X, y, resolution, title ):
+
+def plot_svm_map(axes, svm, X, y, resolution, title):
     """
     Utility to plot the classification map of an SVM
     highlighting the support vectors.
     """
-    utils.plot_classification_map(axes, lambda z: svm.predict(z), X, y,
-                                  resolution=resolution, title=title, legend_loc=None)
-    axes.scatter(X[svm.support_,0], X[svm.support_,1],
-                 facecolors='none', edgecolors='k', s=140, label='SV')
-    axes.legend(loc='upper left')
+    utils.plot_classification_map(
+        axes,
+        lambda z: svm.predict(z),
+        X,
+        y,
+        resolution=resolution,
+        title=title,
+        legend_loc=None,
+    )
+    axes.scatter(
+        X[svm.support_, 0],
+        X[svm.support_, 1],
+        facecolors="none",
+        edgecolors="k",
+        s=140,
+        label="SV",
+    )
+    axes.legend(loc="upper left")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     args = process_args()
     rng = numpy.random.default_rng(args.seed)
-    
-    LIMITS=(-5, 5)
-    
+
+    LIMITS = (-5, 5)
+
     fig = plt.figure(figsize=(12, 8))
     axs = fig.subplots(nrows=2, ncols=3)
 
-    print('Q1: generating linearly separable data')    
-    X_lin, y_lin = generate_margined_binary_data ( args.num_samples, 2, LIMITS, rng )
+    print("Q1: generating linearly separable data")
+    X_lin, y_lin = generate_margined_binary_data(args.num_samples, 2, LIMITS, rng)
     if X_lin is None:
-        print('not implemented')
-        utils.plot_unimplemented(axs[0,0], title='Linear Data, Linear SVM')
-        utils.plot_unimplemented(axs[0,1], title='Linear Data, Perceptron')
-        utils.plot_unimplemented(axs[0,2], title='Linear Data, RBF SVM')        
+        print("not implemented")
+        utils.plot_unimplemented(axs[0, 0], title="Linear Data, Linear SVM")
+        utils.plot_unimplemented(axs[0, 1], title="Linear Data, Perceptron")
+        utils.plot_unimplemented(axs[0, 2], title="Linear Data, RBF SVM")
     else:
-        print('Q1: fitting linear SVM')
+        print("Q1: fitting linear SVM")
         t0 = perf_counter()
-        svm_lin = SVC(kernel='linear', C=args.cost)
+        svm_lin = SVC(kernel="linear", C=args.cost)
         svm_lin.fit(X_lin, y_lin)
-        print('time taken: %.2f seconds' % (perf_counter() - t0))
+        print("time taken: %.2f seconds" % (perf_counter() - t0))
 
-        print('Q1: plotting fit')
+        print("Q1: plotting fit")
         t0 = perf_counter()
-        plot_svm_map ( axs[0,0], svm_lin, X_lin, y_lin, args.resolution, title='Linear Data, Linear SVM' )
-        print('time taken: %.2f seconds' % (perf_counter() - t0))
-        
-        print('Q1: calculating geometric margin')
-        marg_svm = geometric_margin(X_lin, y_lin, svm_lin.coef_[0,:], svm_lin.intercept_[0])
-        
+        plot_svm_map(
+            axs[0, 0],
+            svm_lin,
+            X_lin,
+            y_lin,
+            args.resolution,
+            title="Linear Data, Linear SVM",
+        )
+        print("time taken: %.2f seconds" % (perf_counter() - t0))
+
+        print("Q1: calculating geometric margin")
+        marg_svm = geometric_margin(
+            X_lin, y_lin, svm_lin.coef_[0, :], svm_lin.intercept_[0]
+        )
+
         if marg_svm is None:
-            print('not implemented')
+            print("not implemented")
         else:
-            print(f'Linear SVM geometric margin: {marg_svm:.3f}')
+            print(f"Linear SVM geometric margin: {marg_svm:.3f}")
 
-        print('Q1: fitting RBF SVM')
+        print("Q1: fitting RBF SVM")
         t0 = perf_counter()
-        svm_rbf = SVC(kernel='rbf', C=args.cost, gamma=args.gamma)
+        svm_rbf = SVC(kernel="rbf", C=args.cost, gamma=args.gamma)
         svm_rbf.fit(X_lin, y_lin)
-        print('time taken: %.2f seconds' % (perf_counter() - t0))
+        print("time taken: %.2f seconds" % (perf_counter() - t0))
 
-        print('Q1: plotting fit')
+        print("Q1: plotting fit")
         t0 = perf_counter()
-        plot_svm_map ( axs[0,2], svm_rbf, X_lin, y_lin, args.resolution, title='Linear Data, RBF SVM' )
-        print('time taken: %.2f seconds' % (perf_counter() - t0))
+        plot_svm_map(
+            axs[0, 2],
+            svm_rbf,
+            X_lin,
+            y_lin,
+            args.resolution,
+            title="Linear Data, RBF SVM",
+        )
+        print("time taken: %.2f seconds" % (perf_counter() - t0))
 
-        print('Q2: fitting perceptron')
+        print("Q2: fitting perceptron")
 
         t0 = perf_counter()
         pw = perceptron_train(X_lin, y_lin)
         if pw is None:
-            print('perceptron not implemented')
-            utils.plot_unimplemented(axs[0,1], title='Linear Data, Perceptron')
+            print("perceptron not implemented")
+            utils.plot_unimplemented(axs[0, 1], title="Linear Data, Perceptron")
         else:
-            print('time taken: %.2f seconds' % (perf_counter() - t0))
-            print('Q2: plotting fit')
-            utils.plot_classification_map(axs[0,1], lambda z: perceptron_predict(z, pw), X_lin, y_lin, resolution=args.resolution, title=f'Linear Data, Perceptron')
+            print("time taken: %.2f seconds" % (perf_counter() - t0))
+            print("Q2: plotting fit")
+            utils.plot_classification_map(
+                axs[0, 1],
+                lambda z: perceptron_predict(z, pw),
+                X_lin,
+                y_lin,
+                resolution=args.resolution,
+                title=f"Linear Data, Perceptron",
+            )
 
-            print('Q2: calculating geometric margin')
+            print("Q2: calculating geometric margin")
             marg_ptron = geometric_margin(X_lin, y_lin, pw[1:], pw[0])
-        
-            if marg_svm is None:
-                print('not implemented')
-            else:
-                print(f'Perceptron geometric margin: {marg_ptron:.3f}')
-                print(f'SVM margin greater by: {marg_svm - marg_ptron:.3f}')
 
-    print('Q3: generating non-linear data')    
-    X_non, y_non = generate_binary_nonlinear_2d ( args.num_samples, LIMITS, rng )
-    
+            if marg_svm is None:
+                print("not implemented")
+            else:
+                print(f"Perceptron geometric margin: {marg_ptron:.3f}")
+                print(f"SVM margin greater by: {marg_svm - marg_ptron:.3f}")
+
+    print("Q3: generating non-linear data")
+    X_non, y_non = generate_binary_nonlinear_2d(args.num_samples, LIMITS, rng)
+
     if X_non is None:
-        print('not implemented')
-        utils.plot_unimplemented(axs[1,0], title='Non-Linear Data, Perceptron')
-        utils.plot_unimplemented(axs[1,1], title='Non-Linear Data, RBF SVM')
-        utils.plot_unimplemented(axs[1,2], title='Non-Linear Data, Custom SVM')
+        print("not implemented")
+        utils.plot_unimplemented(axs[1, 0], title="Non-Linear Data, Perceptron")
+        utils.plot_unimplemented(axs[1, 1], title="Non-Linear Data, RBF SVM")
+        utils.plot_unimplemented(axs[1, 2], title="Non-Linear Data, Custom SVM")
     else:
-        print('Q3: fitting perceptron')
+        print("Q3: fitting perceptron")
         t0 = perf_counter()
         pw = perceptron_train(X_non, y_non)
         if pw is None:
-            print('perceptron not implemented')
-            utils.plot_unimplemented(axs[1,0], title='Non-Linear Data, Perceptron')
+            print("perceptron not implemented")
+            utils.plot_unimplemented(axs[1, 0], title="Non-Linear Data, Perceptron")
         else:
-            print('time taken: %.2f seconds' % (perf_counter() - t0))
-            print('Q3: plotting fit')
-            utils.plot_classification_map(axs[1,0], lambda z: perceptron_predict(z, pw), X_non, y_non, resolution=args.resolution, title=f'Non-Linear Data, Perceptron')
-        
-        print('Q3: fitting RBF SVM')
-        t0 = perf_counter()
-        svm_rbf = SVC(kernel='rbf', C=args.cost, gamma=args.gamma)
-        svm_rbf.fit(X_non, y_non)
-        print('time taken: %.2f seconds' % (perf_counter() - t0))
+            print("time taken: %.2f seconds" % (perf_counter() - t0))
+            print("Q3: plotting fit")
+            utils.plot_classification_map(
+                axs[1, 0],
+                lambda z: perceptron_predict(z, pw),
+                X_non,
+                y_non,
+                resolution=args.resolution,
+                title=f"Non-Linear Data, Perceptron",
+            )
 
-        print('Q3: plotting fit')
+        print("Q3: fitting RBF SVM")
         t0 = perf_counter()
-        plot_svm_map ( axs[1,1], svm_rbf, X_non, y_non, args.resolution, title='Non-Linear Data, RBF SVM')
-        print('time taken: %.2f seconds' % (perf_counter() - t0))
-        
-        # check custom kernel at least superficially works
+        svm_rbf = SVC(kernel="rbf", C=args.cost, gamma=args.gamma)
+        svm_rbf.fit(X_non, y_non)
+        print("time taken: %.2f seconds" % (perf_counter() - t0))
+
+        print("Q3: plotting fit")
+        t0 = perf_counter()
+        plot_svm_map(
+            axs[1, 1],
+            svm_rbf,
+            X_non,
+            y_non,
+            args.resolution,
+            title="Non-Linear Data, RBF SVM",
+        )
+        print("time taken: %.2f seconds" % (perf_counter() - t0))
+
+        # check custom kernel at least superficially works
         # before trying to train an SVM with it
-        zz = np.zeros((1,1))
-        if custom_kernel(zz,zz) is None:
-            print('Q4: custom kernel not implemented')
-            utils.plot_unimplemented(axs[1,2], title='Non-Linear Data, Custom SVM')
+        zz = np.zeros((1, 1))
+        if custom_kernel(zz, zz) is None:
+            print("Q4: custom kernel not implemented")
+            utils.plot_unimplemented(axs[1, 2], title="Non-Linear Data, Custom SVM")
         else:
-            print(f'Q4: fitting SVM with custom kernel')
-            
-            def kernel ( x, y ):
+            print(f"Q4: fitting SVM with custom kernel")
+
+            def kernel(x, y):
                 return custom_kernel(x, y, args.gamma)
-            
+
             t0 = perf_counter()
             svm_cust = SVC(kernel=custom_kernel, C=args.cost)
             svm_cust.fit(X_non, y_non)
-            print('time taken: %.2f seconds' % (perf_counter() - t0))
+            print("time taken: %.2f seconds" % (perf_counter() - t0))
 
-            print('Q4: plotting fit')
+            print("Q4: plotting fit")
             t0 = perf_counter()
-            plot_svm_map ( axs[1,2], svm_cust, X_non, y_non, args.resolution, title='Non-Linear Data, Custom SVM')
-            print('time taken: %.2f seconds' % (perf_counter() - t0))
-    
+            plot_svm_map(
+                axs[1, 2],
+                svm_cust,
+                X_non,
+                y_non,
+                args.resolution,
+                title="Non-Linear Data, Custom SVM",
+            )
+            print("time taken: %.2f seconds" % (perf_counter() - t0))
+
     fig.tight_layout(pad=1)
     fig.savefig(args.file)
     plt.close(fig)

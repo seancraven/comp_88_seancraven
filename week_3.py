@@ -141,14 +141,13 @@ def decision_node_split(
             y_above = y[ind_above]
             y_below = y[~ind_above]
             if len(y_below) >= min_size and len(y_above) >= min_size:
-                error = misclassification(
+                error_above = misclassification(
                     y_above, modal(y_above), weights[ind_above]
                 )
                 error_below = misclassification(
                     y_below, modal(y_below), weights[~ind_above]
                 )
-                if error_below < error:
-                    error = error_below
+                error = error_below + error_above
                 if len(y_above) >= min_size and error < error_max:
                     thresh_list.append((error, len(y_above), feature, th))
     # Sort the threshold list first by smallest error, then by
@@ -290,7 +289,7 @@ def random_forest_train(X, y, k, rng, min_size=3, max_depth=10):
     # Returns:
         forest: a list of tree dicts as returned by decision_tree_train
     """
-    rng = np.random.default_rng(11)
+    rng = np.random.default_rng(rng)
     X_y = np.hstack((X, y[:, np.newaxis]))
     forest = []
     for i in range(k):

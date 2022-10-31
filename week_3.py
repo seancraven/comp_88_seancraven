@@ -348,6 +348,7 @@ def adaboost_train(X, y, k, min_size=1, max_depth=1, epsilon=1e-8):
         alphas: a vector of weights indicating how much credence to
             given each of the decision tree predictions
     """
+    fig = plt.figure()
     trees = []
     alphas = []
     weights = np.ones_like(y)/y.shape[0]
@@ -355,35 +356,25 @@ def adaboost_train(X, y, k, min_size=1, max_depth=1, epsilon=1e-8):
         h = decision_tree_train(
             X, y, weights=weights, min_size=min_size, max_depth=max_depth
         )
+
         h_pred = decision_tree_predict(h, X)
-        above_class = h["above"]["class"]
-        below_class = h["below"]["class"]
-        thresh = h["thresh"]
-        ind_above = ind_above_thresh(X[:, h["feature"]], thresh)
-        y_above = y[ind_above]
-        y_below = y[~ind_above]
-        error = misclassification(y_above, above_class, weights[ind_above])
-        error_below = misclassification(y_below, below_class, weights[~ind_above])
-        if error < error_below:
-            error = error_below
+        error = misclassification(y, h_pred, weights)
         alpha = np.log(1 - error) - np.log(error)
         weights = weight_update(y, h_pred, weights, alpha)
         trees.append(h)
         alphas.append(alpha)
     return trees, np.array(alphas)
 
+def plot_threshold(limits, tree, alpha):
+    th = tree["thresh"]
+    if tree["feature"] == 0:
+        plt.plot([th, th], limits, label=f"{alpha}")
+    else:
+        plt.plot(limits, [th, th])
 
 def weight_update(y, y_hat, w, alpha):
-    for i, (y_i, y_hat_i, w_i) in enumerate(zip(y, y_hat, w)):
-        if y_i != y_hat_i:
-            w[i] = w_i * np.exp(alpha)
-        else:
-            w[i] = w_i
-    return np.exp(np.log(w) - np.log(np.sum(w)))
-
-
-def adaboost_misclassification(y, y_hat, w):
-    return np.sum(abs(y - y_hat)*w)
+    w *= np.exp((alpha)*abs(y - y_hat))
+    return w/np.sum(w)
 
 
 def adaboost_predict(trees, alphas, X):

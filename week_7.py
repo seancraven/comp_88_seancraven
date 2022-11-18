@@ -150,8 +150,10 @@ def compute_wcss(data, centroids, assignments):
     # Returns:
         wcss: the WCSS across all clusters.
     """
-    # TODO: implement the within cluster sum of squares
-    return None
+    wcss = 0
+    for i, c in enumerate(centroids):
+        wcss += np.sum((data[assignments == i] - c)**2)
+    return wcss
 
 
 def k_means_clustering(data, rng, k=3, init="forgy", max_iter=500):
@@ -171,8 +173,46 @@ def k_means_clustering(data, rng, k=3, init="forgy", max_iter=500):
         n_iter: the number of iterations needed by the algorithm.
         centroids: the centroids after convergence.
     """
-    # TODO: implement the k-means clustering algorithm
-    return None, None, None
+    # Initialisation
+    if init == "forgy":
+        centroids = data[rng.integers(0, len(data)-1, size=(k,))]
+    elif init == "naive":
+        centroids = np.zeros((k, data.shape[1]))
+        for dim in range(data.shape[1]):
+            centroids[:, dim] = rng.uniform(np.min(data[:, dim]), np.max(data[:, dim]), size=(k,))
+    else:
+        raise ValueError("init only accepts 'forgy' or 'naive'.")
+    assignments = rng.integers(0, k-1, size=(data.shape[0]))
+    # Find Solution
+    for i in range(max_iter):
+        for j, c in enumerate(centroids):
+            c_group = data[assignments == j]
+            if len(c_group) > 0:
+                centroids[j] = np.nanmean(c_group, axis=0)
+            else:
+                centroids[j] = data[rng.integers(0, data.shape[0]-1)]
+
+        _assignments = find_assignments(data, centroids)
+        if all(assignments == _assignments):
+            break
+        assignments = _assignments
+        print(f"WCSS for iter{i}: {compute_wcss(data, centroids, assignments)}")
+    return assignments, i, centroids
+
+def find_assignments(data, centroids):
+    """
+    For each datapoint finds the closest centroid.
+    Args:
+        data:
+        centroids:
+
+    Returns:
+        assignments: list of closest centroids.
+    """
+    distances = np.zeros((data.shape[0], centroids.shape[0]))
+    for i, c in enumerate(centroids):
+        distances[:, i] = np.sum((data - c)**2, axis=1)
+    return np.argmin(distances, axis=1)
 
 
 def image_colour_quantisation(img, k, max_iter, rng):
@@ -192,8 +232,12 @@ def image_colour_quantisation(img, k, max_iter, rng):
             sequentialised image after the colour channels C have
             been assigned to the k clusters using the k-means algorithm.
     """
-    # TODO: implement image colour quantisation using the k-means algorithm.
-    return None
+    flat_img = img.reshape(img.shape[0]*img.shape[1], img.shape[-1])
+    assignments, _, coloroids = k_means_clustering(flat_img, rng, k, max_iter=max_iter, init="naive")
+    img_seq = np.zeros_like(flat_img)
+    for i, ass in enumerate(assignments):
+        img_seq[i] = coloroids[ass]
+    return img_seq
 
 
 def load_word_embeddings(path):
@@ -235,8 +279,12 @@ def get_nearest_neighbours(query, embeddings, labels, n=10):
             for query (INCLUDING query itself).
     """
     assert query in labels, print(f"No embedding for word {query}")
-    # TODO: find the nearest neighbours for word 'query' in 'embeddings'
-    return None
+    index = labels.index(query)
+    embedded_value = embeddings[index]
+    dist = np.sum((embeddings - embedded_value)**2, axis=1)
+    ans = [labels[i] for i in np.argsort(dist)[:n]]
+    assert len(ans) == n
+    return ans
 
 
 def pca_eigen(data, n):
@@ -252,9 +300,11 @@ def pca_eigen(data, n):
             second dimension (shape (N, n)).
     """
     # TODO: transform the input data using PCA and
-    # return only the n principal components
-    return None
-
+    cov_mat = data.T @ data/data.shape[0]
+    vals, vecs = np.linalg.eig(cov_mat)
+    sorted_order = np.argsort(vals, )[-n:]
+    U = vecs[:, sorted_order]
+    return data @ U
 
 def pca_svd(data, n):
     """
@@ -270,8 +320,9 @@ def pca_svd(data, n):
     """
     # TODO: transform the input data using PCA and
     # return only the n principal components
-    return None
+    V, D, ut = np.linalg.svd(data, full_matrices=False)
 
+    return V[:,:n]*D[:n]
 
 def pca(data, method="eigen", n_pcs=2):
     """

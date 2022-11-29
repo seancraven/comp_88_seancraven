@@ -122,7 +122,6 @@ def gaussian_mix_loglik(X, means, covs, class_probs):
         pass
     dists = [mvn(m, cov=c) for m, c in zip(means, covs)]
 
-
     loglik = 0
     for x in X:
         lik = 0
@@ -199,8 +198,8 @@ def gaussian_mix_M_step(X, resps):
         for idx in range(X.shape[1])
     ]
     a = np.mean(resps, axis=0)
-    #add epsilon tern to enusre cov mat is psd.
-    eps = 10**-5*np.eye(X.shape[1])
+    # add epsilon tern to enusre cov mat is psd.
+    eps = 10**-5 * np.eye(X.shape[1])
     sigmas = []
     for idx, mu_ in enumerate(mu):
         V = X - mu_
@@ -238,22 +237,37 @@ def fit_gaussian_mix(X, num_gaussians, rng, max_iter=20, loglik_stop=1e-1):
         logliks: a list of the model log likelihood values after
             each fitting iteration
     """
-    ng = num_gaussians
-    means = [rng.random(size=(ng,)) for i in range(ng)]
-    covs = [np.diag(rng.random(size=(ng,))) for i in range(ng)]
+    best_resps = None
+    best_means = None
+    best_covs = None
+    best_class_probs = None
+    best_logliks = None
+    best_loglik_final = np.inf
+    for i in range(10):
+        ng = num_gaussians
+        means = [rng.random(size=(ng,)) for i in range(ng)]
+        covs = [np.diag(rng.random(size=(ng,))) for i in range(ng)]
 
-    class_probs = rng.random(ng)
-    class_probs = class_probs / sum(class_probs)
-    logliks = [gaussian_mix_loglik(X, means, covs, class_probs)]
+        class_probs = rng.random(ng)
+        class_probs = class_probs / sum(class_probs)
+        logliks = [gaussian_mix_loglik(X, means, covs, class_probs)]
 
-    i = 0
-    while i <= max_iter and logliks[-1] < loglik_stop:
-        i += 1
-        resps = gaussian_mix_E_step(X, means, covs, class_probs)
-        means, covs, class_probs = gaussian_mix_M_step(X, resps)
-        logliks.append(gaussian_mix_loglik(X, means, covs, class_probs))
+        i = 0
+        while i <= max_iter and logliks[-1] < loglik_stop:
+            i += 1
+            resps = gaussian_mix_E_step(X, means, covs, class_probs)
+            means, covs, class_probs = gaussian_mix_M_step(X, resps)
+            logliks.append(gaussian_mix_loglik(X, means, covs, class_probs))
 
-    return resps, means, covs, class_probs, logliks
+        if abs(logliks[-1]) < best_loglik_final:
+            best_resps = resps
+            best_means = means
+            best_covs = covs
+            best_class_probs = class_probs
+            best_logliks = logliks
+            best_loglik_final = abs(logliks[-1])
+
+    return best_resps, best_means, best_covs, best_class_probs, best_logliks
 
 
 # -- Question 3 --
@@ -294,7 +308,6 @@ def generate_hmm_sequence(
         z.append(state)
         x.append(dists[state].rvs())
 
-
     return np.stack(x), np.stack(z)
 
 
@@ -326,12 +339,20 @@ def viterbi(x, initial_probs, transitions, emission_means, emission_sds):
     for t in range(timesteps):
         if t == 0:
             for i in range(n_states):
-                alpha[t, i] = np.max(initial_probs[i] * transitions[:, i]) * dists[i].pdf(x[t])
-                eta[t, i] = np.argmax(initial_probs[i] * transitions[:, i])
+                alpha[t, i] = np.max(
+                    initial_probs * transitions[i] * dists[i].pdf(x[t])
+                )
+                eta[t, i] = np.argmax(
+                    initial_probs * transitions[i] * dists[i].pdf(x[t])
+                )
         else:
             for i in range(n_states):
-                alpha[t, i] = np.max(alpha[t-1, i] * transitions.T[:, i]) * dists[i].pdf(x[t])
-                eta[t, i] = np.argmax(alpha[t-1, i] * transitions.T[:, i])
+                alpha[t, i] = np.max(
+                    alpha[t - 1] * transitions[i] * dists[i].pdf(x[t])
+                )
+                eta[t, i] = np.argmax(
+                    alpha[t - 1] * transitions[i] * dists[i].pdf(x[t])
+                )
     hidden_states = []
     for i, (prob, state) in enumerate(zip(alpha[::-1], eta[::-1])):
         if i == 0:

@@ -282,8 +282,20 @@ def generate_hmm_sequence(
         x: a vector of observations for each time step
         z: a vector of hidden state (indices) for each time step
     """
-    # TODO: implement this
-    return None, None
+    x = []
+    z = []
+    dists = [norm(m, s) for m, s in zip(emission_means, emission_sds)]
+    for t in range(num_samples):
+        if t == 0:
+            hidden_dist = initial_probs @ transitions
+        else:
+            hidden_dist = hidden_dist @ transitions
+        state = sample_from_pmf(hidden_dist, rng)
+        z.append(state)
+        x.append(dists[state].rvs())
+
+
+    return np.stack(x), np.stack(z)
 
 
 # -- Question 4 --
@@ -306,10 +318,30 @@ def viterbi(x, initial_probs, transitions, emission_means, emission_sds):
     # Returns
         z: a vector of predicted hidden state (indices) for each time step
     """
-    alpha = np.zeros((inital_probs.shape[0], emission_means.shape[0]))
+    n_states = initial_probs.shape[0]
+    alpha = np.zeros((x.shape[0], initial_probs.shape[0]))
     eta = np.zeros_like(alpha)
-
-    return None
+    dists = [norm(m, s) for m, s in zip(emission_means, emission_sds)]
+    timesteps = len(x)
+    for t in range(timesteps):
+        if t == 0:
+            for i in range(n_states):
+                alpha[t, i] = np.max(initial_probs[i] * transitions[:, i]) * dists[i].pdf(x[t])
+                eta[t, i] = np.argmax(initial_probs[i] * transitions[:, i])
+        else:
+            for i in range(n_states):
+                alpha[t, i] = np.max(alpha[t-1, i] * transitions.T[:, i]) * dists[i].pdf(x[t])
+                eta[t, i] = np.argmax(alpha[t-1, i] * transitions.T[:, i])
+    hidden_states = []
+    for i, (prob, state) in enumerate(zip(alpha[::-1], eta[::-1])):
+        if i == 0:
+            hidden_states.append(np.argmax(prob))
+            next_state = int(state[int(np.argmax(prob))])
+        else:
+            hidden_states.append(next_state)
+            next_state = int(state[next_state])
+    hidden_states.reverse()
+    return hidden_states
 
 
 #### TEST DRIVER
